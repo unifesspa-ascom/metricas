@@ -326,7 +326,7 @@ function yoyTable(mets){
   var u=last(),Y=+u.slice(0,4),P=Y-1,md=u.slice(4);
   var a=[Y+'-01-01',u],b=[P+'-01-01',P+md],c=[P+'-01-01',P+'-12-31'];
   var rows=mets.map(function(m){
-    var mm=mi(m),fz=firstNZ(m),ok=fz&&fz<=addDays(P+'-01-01',30);
+    var mm=mi(m),fz=firstNZ(m),ok=fz&&fz<=addDays(P+"-01-01",30);
     var va=kv(m,rng(m,a[0],a[1])),vb=kv(m,rng(m,b[0],b[1])),vc=kv(m,rng(m,c[0],c[1]));
     var dl='<span class="d eq">n/d</span>',cb='n/d',cc='n/d';
     if(ok){cb=fmt(vb);cc=fmt(vc);if(vb>0){var p=(va-vb)/vb*100;dl='<span class="d '+(p>0.5?'up':p<-0.5?'dn':'eq')+'">'+(p>0?'+':'')+p.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</span>'}}
@@ -393,14 +393,15 @@ function render(){
   }
   var mets=ORDEM.concat(Object.keys(DATA.series[st.plat]).filter(function(k){return ORDEM.indexOf(k)<0})).filter(function(k){return DATA.series[st.plat][k]&&Object.keys(DATA.series[st.plat][k]).length});
   if(mets.indexOf(st.met)<0)st.met=mets[0];
-  var len=diffDays(st.ini,st.fim)+1,pf=addDays(st.ini,-1),pi=addDays(pf,-(len-1));
+  var len=diffDays(st.ini,st.fim)+1,pf=addDays(st.ini,-1),pi=addDays(pf,-(len-1)),lbl='vs '+len+' dias anteriores ('+br(pi).slice(0,5)+' a '+br(pf).slice(0,5)+(pi.slice(0,4)!==pf.slice(0,4)||true?'/'+pf.slice(0,4):'')+')';
+  if(st.preset==='ano'){var py=+st.ini.slice(0,4)-1;pi=py+st.ini.slice(4);pf=py+st.fim.slice(4);lbl='vs mesmo período de '+py}
   var presets=[['ano','Este ano'],['mes','Mês atual'],['90','90 dias'],['30','30 dias'],['7','7 dias'],['tudo','Tudo']];
   var h='<div class="bar-ctl noprint"><div class="chips">'+presets.map(function(p){return '<button class="chip" data-pre="'+p[0]+'" aria-pressed="'+(st.preset===p[0])+'">'+p[1]+'</button>'}).join('')+'</div>'+
     '<div class="dt"><span>De</span><input id="di" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="'+br(st.ini)+'" aria-label="Data inicial"><span>até</span><input id="df" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="'+br(st.fim)+'" aria-label="Data final"></div></div>';
   h+='<div class="grid">'+mets.map(function(m){
     var a=rng(m,st.ini,st.fim),b=rng(m,pi,pf),v=kv(m,a),pv=kv(m,b),mm=mi(m),dl='';
-    var hasPrev=b.some(function(x){return x.has});
-    if(hasPrev&&pv>0){var pc=(v-pv)/pv*100;dl='<div class="d '+(pc>0.5?'up':pc<-0.5?'dn':'eq')+'">'+(pc>0?'+':'')+pc.toLocaleString('pt-BR',{maximumFractionDigits:1})+'% vs período anterior</div>'}else dl='<div class="d eq">sem período anterior</div>';
+    var fzm=firstNZ(m),hasPrev=fzm&&fzm<=addDays(pi,20);
+    if(hasPrev&&pv>0){var pc=(v-pv)/pv*100;dl='<div class="d '+(pc>0.5?'up':pc<-0.5?'dn':'eq')+'">'+(pc>0?'+':'')+pc.toLocaleString('pt-BR',{maximumFractionDigits:1})+'% '+lbl+'</div>'}else dl='<div class="d eq">sem dados do período anterior</div>';
     return '<button class="kpi" data-met="'+m+'" aria-pressed="'+(m===st.met)+'"><div class="n">'+esc(mm.n)+(mm.t==='avg'?' (média/dia)':'')+'</div><div class="v">'+fmt(v)+'</div>'+dl+spark(a,css(mm.c))+'</button>';
   }).join('')+'</div>';
   var mm=mi(st.met);
