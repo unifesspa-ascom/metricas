@@ -80,6 +80,48 @@ tfoot td{font-weight:800;border-bottom:0}
 footer{margin-top:24px;text-align:center;color:var(--muted);font-size:12.5px}
 .sr{position:absolute;left:-9999px}
 @media print{header .btn,.bar-ctl,.msg,.opts,footer,.tabs{display:none!important}body{background:#fff;color:#000}.panel,.kpi{box-shadow:none;break-inside:avoid}}
+
+/* relatório trimestral */
+.relctl{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:16px}
+.relctl label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);font-weight:600}
+.relctl select{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--fg);min-height:40px}
+.relctl .chk{flex-direction:row;align-items:center;gap:6px;color:var(--fg);min-height:40px}
+.sheet{background:#fff;color:#111;max-width:860px;margin:0 auto;padding:30px 34px;border:1px solid var(--line);border-radius:6px;box-shadow:var(--shadow);font-family:var(--font)}
+.sheet h1{font-size:21px;margin:0 0 2px;font-weight:800}
+.sheet h2{font-size:17px;margin:0 0 10px;font-weight:800;padding-bottom:6px;border-bottom:2px solid #1d4ed8}
+.sheet h3{font-size:13.5px;margin:16px 0 6px;font-weight:700}
+.sheet .rh{display:flex;gap:16px;align-items:center;border-bottom:1px solid #d7dcd8;padding-bottom:14px;margin-bottom:6px}
+.sheet .rh img{height:46px;width:auto}
+.sheet .rh p{margin:0;font-size:12px;color:#444}
+.sheet table{font-size:12px}
+.sheet th{color:#444}
+.sheet td,.sheet th{border-bottom:1px solid #dfe3e0}
+.sheet .secao{margin-top:22px}
+.sheet .mini{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.sheet .mini>div{border:1px solid #e1e5e2;border-radius:8px;padding:6px 8px;break-inside:avoid}
+.sheet .mini b{font-size:11.5px;display:block}
+.sheet .mini svg{width:100%;height:auto;display:block}
+.sheet .d.up{color:#15803d}.sheet .d.dn{color:#c62828}.sheet .d.eq{color:#666}
+.sheet .ed{min-height:84px;border:1px dashed #b8c0ba;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap;outline:none}
+.sheet .ed:empty:before{content:attr(data-ph);color:#8a948d}
+.sheet .ed:focus{border-color:#1d4ed8;background:#f7f9ff}
+.sheet .nt{font-size:11px;color:#555;margin:8px 0 0}
+.sheet .leg{font-size:11px;color:#555;margin:4px 0 0}
+@media(max-width:700px){.sheet{padding:18px 14px}.sheet .mini{grid-template-columns:repeat(2,1fr)}}
+@media print{
+  @page{size:A4;margin:13mm}
+  body.rel{background:#fff}
+  body.rel header.top,body.rel .relctl,body.rel .msg,body.rel footer{display:none!important}
+  body.rel main{padding:0}.sheet{border:0;box-shadow:none;border-radius:0;padding:0;max-width:none}
+  .sheet .secao.novapag{break-before:page}
+  .sheet *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .sheet .ed{border:0;padding:0;min-height:0}.sheet .ed:empty{display:none}
+  .noprint{display:none!important}
+  .sheet h3:has(+ .ed:empty){display:none}
+  .sheet td,.sheet th{padding:3.5px 6px}
+  .sheet table{break-inside:avoid}.sheet h2,.sheet h3{break-after:avoid}
+  .sheet .secao{margin-top:10px}.sheet h3{margin:8px 0 4px}.sheet .rh{padding-bottom:8px}.sheet .nt{margin:5px 0 0}.sheet .mini>div{padding:4px 6px}.sheet .ed{font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -92,6 +134,7 @@ footer{margin-top:24px;text-align:center;color:var(--muted);font-size:12.5px}
       </div>
       <div class="opts">
         <button class="btn" id="btnAdd" type="button">Adicionar CSV</button>
+        <button class="btn" id="btnRel" type="button">Relatório trimestral</button>
         <button class="btn" id="btnPrint" type="button">Imprimir / PDF</button>
         <input id="file" class="sr" type="file" accept=".csv,text/csv" multiple>
       </div>
@@ -124,8 +167,8 @@ var METR={
 };
 var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores'];
 var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-var DATA=null, local=false;
-var st={plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',cap:false};
+var DATA=null, local=false, LOGO=(document.querySelector('.brand img')||{}).src||'';
+var st={view:'painel',plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',cap:false};
 
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -381,12 +424,111 @@ function mesCmp(){
   return '<div class="panel"><h2>Comparativo mês a mês: '+esc(mm.n)+'</h2><p class="sub">'+Y+' contra '+P+'. Clique em outro cartão acima para trocar a métrica.</p>'+svg+leg+'<div class="tw"><table><thead><tr><th>Mês</th><th>'+P+'</th><th>'+Y+'</th><th>Variação</th></tr></thead><tbody>'+rows.join('')+'</tbody></table></div></div>';
 }
 
+
+/* ---------- relatório trimestral ---------- */
+var REL={ano:null,tri:null,plats:{facebook:true,instagram:true}};
+function qRange(Y,q){
+  var m1=(q-1)*3+1,m3=q*3,dim=new Date(Y,m3,0).getDate(),u=last();
+  var a=Y+'-'+pad(m1)+'-01',b=Y+'-'+pad(m3)+'-'+pad(dim);
+  return {a:a,b:b>u?u:b,full:b<=u,fim:b};
+}
+function ptxt(a,b){
+  if(b===null||b===undefined)return '<span class="d eq">n/d</span>';
+  if(!(b>0))return '<span class="d eq">n/d</span>';
+  var p=(a-b)/b*100;return '<span class="d '+(p>0.5?'up':p<-0.5?'dn':'eq')+'">'+(p>0?'+':'')+p.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</span>';
+}
+function okFrom(m,start){var fz=firstNZ(m);return !!(fz&&fz<=addDays(start,20))}
+function miniBars(items,mm,W,H){
+  var L=34,R=4,T=6,B=18,pw=W-L-R,ph=H-T-B,mx=Math.max.apply(null,items.map(function(x){return Math.max(x.a,x.b||0)}))||1,s4=niceStep(mx/3),ym=s4*3;if(ym<mx)ym=Math.ceil(mx/s4)*s4;
+  var g='',n=items.length,bw=pw/n,i;
+  for(i=0;i<=3;i++){var y=T+ph-(i*s4/ym)*ph;g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="#e1e5e2"/><text x="'+(L-4)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="end" font-size="9" fill="#666">'+short(i*s4)+'</text>'}
+  var bars=items.map(function(x,i){
+    var w=bw*0.34,x0=L+i*bw+bw*0.12,ha=(x.a/ym)*ph,hb=x.b==null?0:(x.b/ym)*ph;
+    return (x.b==null?'':'<rect x="'+x0.toFixed(1)+'" y="'+(T+ph-hb).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(hb,x.b>0?1:0).toFixed(1)+'" fill="#aab3ad" rx="1.5"/>')+'<rect x="'+(x0+w+1).toFixed(1)+'" y="'+(T+ph-ha).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(ha,x.a>0?1:0).toFixed(1)+'" fill="'+(mm.cor||'#1d4ed8')+'" rx="1.5"/><text x="'+(L+i*bw+bw/2).toFixed(1)+'" y="'+(H-5)+'" text-anchor="middle" font-size="9.5" fill="#444">'+x.l+'</text>';
+  }).join('');
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img">'+g+bars+'</svg>';
+}
+function dailyBars(arr,cor,W,H){
+  var L=40,R=4,T=6,B=20,pw=W-L-R,ph=H-T-B,mx=Math.max.apply(null,arr.map(function(x){return x.v}))||1,s4=niceStep(mx/4),ym=s4*4;if(ym<mx)ym=Math.ceil(mx/s4)*s4;
+  var g='',n=arr.length,bw=pw/n,i;
+  for(i=0;i<=4;i++){var y=T+ph-(i*s4/ym)*ph;g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="#e1e5e2"/><text x="'+(L-4)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="end" font-size="9" fill="#666">'+short(i*s4)+'</text>'}
+  var b=arr.map(function(x,i){var h=(x.v/ym)*ph;return '<rect x="'+(L+i*bw).toFixed(2)+'" y="'+(T+ph-h).toFixed(2)+'" width="'+Math.max(0.8,bw*0.8).toFixed(2)+'" height="'+Math.max(h,x.v>0?0.8:0).toFixed(2)+'" fill="'+cor+'"/>'}).join('');
+  var lb='',step=Math.max(1,Math.ceil(n/7));arr.forEach(function(x,i){if(i%step===0)lb+='<text x="'+(L+i*bw+bw/2).toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="9.5" fill="#444">'+br(x.d).slice(0,5)+'</text>'});
+  return '<svg viewBox="0 0 '+W+' '+H+'" role="img">'+g+b+lb+'</svg>';
+}
+function edKey(f){return 'ascom-rel-'+REL.ano+'-'+REL.tri+'-'+f}
+function edGet(f){try{return localStorage.getItem(edKey(f))||''}catch(e){return ''}}
+function relPlat(p,Y,q){
+  var old=st.plat;st.plat=p;
+  var cur=qRange(Y,q),pq=q===1?qRange(Y-1,4):qRange(Y,q-1),py=qRange(Y-1,q);
+  var mets=ORDEM.filter(function(k){return DATA.series[p]&&DATA.series[p][k]&&Object.keys(DATA.series[p][k]).length});
+  var COR={visualizacoes:'#1d4ed8',alcance:'#0e9f6e',visualizadores:'#0e9f6e',interacoes:'#d97706',cliques:'#9333ea',visitas:'#1d4ed8',seguidores:'#0e9f6e'};
+  var rows=mets.map(function(m){
+    var mm=mi(m),v=kv(m,rng(m,cur.a,cur.b)),okp=okFrom(m,pq.a),oky=okFrom(m,py.a);
+    var vp=okp?kv(m,rng(m,pq.a,pq.b)):null,vy=oky?kv(m,rng(m,py.a,py.b)):null;
+    return '<tr><td>'+esc(mm.n)+(mm.t==='avg'?' (média/dia)':'')+'</td><td><b>'+fmt(v)+'</b></td><td>'+(okp?fmt(vp):'n/d')+'</td><td>'+ptxt(v,vp)+'</td><td>'+(oky?fmt(vy):'n/d')+'</td><td>'+ptxt(v,vy)+'</td></tr>';
+  }).join('');
+  var mini=mets.map(function(m){
+    var mm=mi(m),items=[],ok=okFrom(m,py.a),i;
+    for(i=0;i<3;i++){
+      var mo=(q-1)*3+1+i,dim=new Date(Y,mo,0).getDate(),a=Y+'-'+pad(mo)+'-01',b=Y+'-'+pad(mo)+'-'+pad(dim);
+      if(a>cur.b)break;if(b>cur.b)b=cur.b;
+      var pa=(Y-1)+'-'+pad(mo)+'-01',pb=(Y-1)+'-'+pad(mo)+'-'+b.slice(8);
+      items.push({l:MESES[mo-1],a:kv(m,rng(m,a,b)),b:ok?kv(m,rng(m,pa,pb)):null});
+    }
+    return '<div><b>'+esc(mm.n)+(mm.t==='avg'?' (média/dia)':'')+'</b>'+miniBars(items,{cor:COR[m]},300,104)+'</div>';
+  }).join('');
+  var vk=mets.indexOf('visualizacoes')>=0?'visualizacoes':mets[0],vm=mi(vk);
+  var daily=dailyBars(rng(vk,cur.a,cur.b),COR[vk]||'#1d4ed8',720,115);
+  var top=rng(vk,cur.a,cur.b).filter(function(x){return x.v>0}).sort(function(x,y){return y.v-x.v}).slice(0,3);
+  var topT=top.length?'<div class="tw"><table style="max-width:340px"><thead><tr><th>Dia de maior destaque</th><th>'+esc(vm.n)+'</th></tr></thead><tbody>'+top.map(function(x){return '<tr><td>'+br(x.d)+'</td><td>'+fmt(x.v)+'</td></tr>'}).join('')+'</tbody></table></div>':'';
+  var C=DATA.conteudo||{},cont='';
+  [[Y,q],[Y-1,q]].forEach(function(yq){
+    var c=C[yq[0]]&&C[yq[0]][p]&&C[yq[0]][p][yq[1]-1];if(!c)return;
+    var al=(c.alcance||0)+(c.alcanceStories||0);
+    cont+='<tr><td>'+yq[1]+'º tri de '+yq[0]+'</td><td>'+fmt((c.feed||0)+(c.stories||0))+'</td><td>'+fmt(c.feed||0)+'</td><td>'+fmt(c.stories||0)+'</td><td>'+fmt(al)+'</td><td>'+fmt(c.reacoes||0)+'</td><td>'+fmt(c.comentarios||0)+'</td><td>'+fmt(c.compartilhamentos||0)+'</td></tr>';
+  });
+  if(cont)cont='<h3>Publicações e engajamento</h3><div class="tw"><table><thead><tr><th>Período</th><th>Publicações</th><th>Feed</th><th>Stories</th><th>Alcance</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+cont+'</tbody></table></div><p class="nt">Dados do relatório trimestral da ASCOM. O alcance dessa tabela soma o alcance de cada publicação e não é comparável ao alcance médio diário do quadro acima.</p>';
+  var notas=[];
+  if(p==='instagram'&&mets.indexOf('visualizacoes')>=0)notas.push('As visualizações exportadas pela conta do Instagram somam Instagram e Facebook (cerca de 1% do total vem do Facebook).');
+  if(mets.some(function(m){return mi(m).t==='avg'}))notas.push('Alcance e visualizadores contam contas ou pessoas únicas por dia, por isso são apresentados como média diária.');
+  notas.push('n/d: o Meta não possui dados dessa métrica no período de comparação.');
+  var html='<div class="secao'+(p===Object.keys(REL.plats).filter(function(k){return REL.plats[k]})[0]?'':' novapag')+'"><h2>'+NOMES[p]+'</h2>'+
+    '<div class="tw"><table><thead><tr><th>Métrica</th><th>'+q+'º tri '+Y+'</th><th>'+(q===1?'4º tri '+(Y-1):(q-1)+'º tri '+Y)+'</th><th>Variação</th><th>'+q+'º tri '+(Y-1)+'</th><th>Variação</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<p class="nt">'+(cur.full?'':'Trimestre parcial, com dados até '+br(cur.b)+'. ')+notas.join(' ')+'</p>'+
+    '<h3>Evolução mensal (barra clara: mesmo mês de '+(Y-1)+')</h3><div class="mini">'+mini+'</div>'+
+    '<h3>'+esc(vm.n)+' por dia</h3>'+daily+topT+cont+
+    '<h3>Análise</h3><div class="ed" contenteditable="true" data-f="an-'+p+'" data-ph="Clique aqui para escrever a análise do '+NOMES[p]+' neste trimestre (opcional).">'+esc(edGet('an-'+p))+'</div></div>';
+  st.plat=old;return html;
+}
+function relHTML(){
+  var u=last(),yrs=[],y;for(y=+first().slice(0,4);y<=+u.slice(0,4);y++)yrs.push(y);
+  if(REL.ano===null){
+    var uq=Math.ceil(+u.slice(5,7)/3),full=qRange(+u.slice(0,4),uq).full;
+    REL.ano=+u.slice(0,4);REL.tri=full?uq:(uq===1?4:uq-1);if(!full&&uq===1)REL.ano--;
+  }
+  var h='<div class="relctl"><label>Ano<select id="rAno">'+yrs.map(function(y){return '<option'+(y===REL.ano?' selected':'')+'>'+y+'</option>'}).join('')+'</select></label>'+
+    '<label>Trimestre<select id="rTri">'+[1,2,3,4].map(function(t){return '<option value="'+t+'"'+(t===REL.tri?' selected':'')+'>'+t+'º trimestre</option>'}).join('')+'</select></label>'+
+    Object.keys(NOMES).map(function(p){return '<label class="chk"><input type="checkbox" data-rp="'+p+'"'+(REL.plats[p]?' checked':'')+'> '+NOMES[p]+'</label>'}).join('')+
+    '<button class="btn primary" id="rPdf" type="button">Gerar PDF</button></div>'+
+    '<p class="note noprint" style="margin:-6px 0 14px">Os campos tracejados do relatório podem ser editados antes de gerar o PDF. Na janela de impressão, escolha "Salvar como PDF" e desative "Cabeçalhos e rodapés".</p>';
+  var cur=qRange(REL.ano,REL.tri);
+  if(cur.a>u){return h+'<div class="panel"><div class="empty"><b>Trimestre ainda sem dados</b>Escolha um trimestre que já tenha começado.</div></div>'}
+  var plats=Object.keys(NOMES).filter(function(p){return REL.plats[p]&&hasData(p)});
+  h+='<div class="sheet"><div class="rh"><img src="'+LOGO+'" alt="UNIFESSPA ASCOM"><div><h1>Relatório trimestral das redes sociais</h1><p>'+REL.tri+'º trimestre de '+REL.ano+' ('+br(cur.a)+' a '+br(cur.b)+')</p><p>Universidade Federal do Sul e Sudeste do Pará, Assessoria de Comunicação</p></div></div>';
+  h+=plats.map(function(p){return relPlat(p,REL.ano,REL.tri)}).join('');
+  h+='<div class="secao"><h2>Considerações finais</h2><div class="ed" contenteditable="true" data-f="final" data-ph="Clique aqui para escrever as considerações finais (opcional).">'+esc(edGet('final'))+'</div><p class="nt">Fonte: Meta Business Suite (exportações em CSV). Relatório gerado em '+br(iso(new Date()))+'.</p></div></div>';
+  return h;
+}
+
 /* ---------- render ---------- */
 function render(){
   var tabs=$('tabs');
   tabs.innerHTML=Object.keys(NOMES).map(function(p){return '<button class="tab" role="tab" data-p="'+p+'" aria-selected="'+(p===st.plat)+'">'+NOMES[p]+'</button>'}).join('');
   $('upd').textContent=DATA.atualizado?br(DATA.atualizado):'-';
   var app=$('app');
+  document.body.classList.toggle('rel',st.view==='rel');$('btnRel').textContent=st.view==='rel'?'Voltar ao painel':'Relatório trimestral';
+  if(st.view==='rel'){tabs.innerHTML='';app.innerHTML=relHTML();return}
   if(!hasData(st.plat)){
     app.innerHTML='<div class="panel"><div class="empty"><b>Ainda não há dados do '+NOMES[st.plat]+'</b>No Meta Business Suite, abra Insights, escolha a conta do '+NOMES[st.plat]+', selecione o período e use Exportar em cada métrica, formato CSV. Depois clique em Adicionar CSV no topo desta página.</div></div>';
     return;
@@ -455,6 +597,16 @@ document.addEventListener('change',function(e){
 document.addEventListener('input',function(e){if(e.target.id==='di'||e.target.id==='df'){var i=e.target,v=i.value.replace(/\D/g,'').slice(0,8),o=v.slice(0,2);if(v.length>2)o+='/'+v.slice(2,4);if(v.length>4)o+='/'+v.slice(4);i.value=o}});
 $('btnAdd').addEventListener('click',function(){$('file').click()});
 $('file').addEventListener('change',function(){onFiles(this.files);this.value=''});
+
+$('btnRel').addEventListener('click',function(){st.view=st.view==='rel'?'painel':'rel';render();window.scrollTo(0,0)});
+document.addEventListener('change',function(e){
+  var t=e.target;
+  if(t.id==='rAno'){REL.ano=+t.value;render()}
+  else if(t.id==='rTri'){REL.tri=+t.value;render()}
+  else if(t.dataset&&t.dataset.rp){REL.plats[t.dataset.rp]=t.checked;render()}
+});
+document.addEventListener('click',function(e){if(e.target.id==='rPdf')window.print()});
+document.addEventListener('focusout',function(e){var t=e.target;if(t.dataset&&t.dataset.f&&t.classList.contains('ed')){try{localStorage.setItem(edKey(t.dataset.f),t.innerText.replace(/\n$/,''))}catch(x){}}});
 $('btnPrint').addEventListener('click',function(){window.print()});
 $('btnDiscard').addEventListener('click',function(){try{localStorage.removeItem(STORE)}catch(e){}location.reload()});
 $('btnDl').addEventListener('click',function(){
