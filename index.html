@@ -168,7 +168,7 @@ var METR={
 var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores'];
 var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 var DATA=null, local=false, LOGO=(document.querySelector('.brand img')||{}).src||'';
-var st={view:'painel',plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',cap:false};
+var st={view:'painel',plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',cap:true};
 
 function $(id){return document.getElementById(id)}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
