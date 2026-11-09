@@ -9,7 +9,7 @@ Variaveis de ambiente necessarias:
 """
 
 import os
-import json
+import jsonh
 import sys
 import requests
 from datetime import date, timedelta
@@ -26,11 +26,11 @@ until_    = date.today().isoformat()
 
 # --- Facebook Page Insights ---
 FB_METRICS = {
-    "visualizadores": "page_impressions_unique",
-    "visualizacoes":  "page_impressions",
-    "interacoes":     "page_engaged_users",
-    "cliques":        "page_consumptions",
-    "seguidores":     "page_fan_adds",
+    "visualizadores": "page_total_media_view_unique",
+    "visualizacoes":  "page_media_view",
+    "interacoes":     "page_post_engagements",
+    "cliques":        "page_total_actions",
+    "seguidores":     "page_daily_follows_unique",
     "visitas":        "page_views_total",
 }
 
