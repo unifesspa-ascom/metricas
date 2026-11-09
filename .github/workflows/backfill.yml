@@ -1,0 +1,99 @@
+name: Backfill de métricas históricas
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Modo: conteudo (rápido, 1 chamada/trimestre) | series (1 chamada/dia) | ambos'
+        required: true
+        default: 'conteudo'
+        type: choice
+        options:
+          - conteudo
+          - series
+          - ambos
+      start_year:
+        description: 'Ano inicial (modo conteudo/ambos) — ex: 2024'
+        required: false
+        default: '2024'
+      end_year:
+        description: 'Ano final (modo conteudo/ambos) — ex: 2026'
+        required: false
+        default: '2026'
+      start_date:
+        description: 'Data inicial (modo series/ambos) — formato YYYY-MM-DD'
+        required: false
+        default: ''
+      end_date:
+        description: 'Data final (modo series/ambos) — formato YYYY-MM-DD'
+        required: false
+        default: ''
+      only_pub_stories:
+        description: 'No modo series, coletar só publicacoes e stories (mais rápido)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      skip_instagram:
+        description: 'Pular dados do Instagram'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar dependências Python
+        run: pip install requests
+
+      - name: Montar argumentos
+        id: args
+        run: |
+          ARGS="--mode ${{ github.event.inputs.mode }}"
+          ARGS="$ARGS --start-year ${{ github.event.inputs.start_year }}"
+          ARGS="$ARGS --end-year ${{ github.event.inputs.end_year }}"
+
+          if [ -n "${{ github.event.inputs.start_date }}" ]; then
+            ARGS="$ARGS --start ${{ github.event.inputs.start_date }}"
+          fi
+          if [ -n "${{ github.event.inputs.end_date }}" ]; then
+            ARGS="$ARGS --end ${{ github.event.inputs.end_date }}"
+          fi
+          if [ "${{ github.event.inputs.only_pub_stories }}" = "true" ]; then
+            ARGS="$ARGS --only-pub-stories"
+          fi
+          if [ "${{ github.event.inputs.skip_instagram }}" = "true" ]; then
+            ARGS="$ARGS --skip-instagram"
+          fi
+
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
+
+      - name: Executar backfill
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID || '447748898661292' }}
+        run: python scripts/backfill_metrics.py ${{ steps.args.outputs.args }}
+
+      - name: Commit e push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dados/metricas.json
+          if git diff --cached --quiet; then
+            echo "Nada a commitar."
+          else
+            git commit -m "backfill: atualiza métricas históricas (${{ github.event.inputs.mode }}, ${{ github.event.inputs.start_year }}-${{ github.event.inputs.end_year }})"
+            git push
+          fi
