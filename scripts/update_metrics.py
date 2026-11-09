@@ -53,6 +53,12 @@ IG_DIRECT_METRICS = {
 
 def api_get(url, params):
     r = requests.get(url, params=params, timeout=30)
+    if not r.ok:
+        try:
+            err = r.json()
+            print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
+        except Exception:
+            print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
     r.raise_for_status()
     data = r.json()
     if "error" in data:
