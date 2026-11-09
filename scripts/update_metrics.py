@@ -26,12 +26,12 @@ until_    = date.today().isoformat()
 
 # --- Facebook Page Insights ---
 FB_METRICS = {
-    "visualizadores": "page_total_media_view_unique",
-    "visualizacoes":  "page_media_view",
-    "interacoes":     "page_post_engagements",
-    "cliques":        "page_total_actions",
-    "seguidores":     "page_daily_follows_unique",
-    "visitas":        "page_views_total",
+    "visualizadores": "page_total_media_view_unique",  # viewers unicos (antigo: page_impressions_unique)
+    "visualizacoes":  "page_media_view",               # views totais  (antigo: page_impressions)
+    "interacoes":     "page_post_engagements",         # engajamentos  (antigo: page_engaged_users)
+    "cliques":        "page_total_actions",            # acoes totais  (antigo: page_consumptions)
+    "seguidores":     "page_daily_follows_unique",     # novos seguid. (antigo: page_fan_adds)
+    "visitas":        "page_views_total",              # visitas ao perfil (mantida)
 }
 
 # --- Instagram User Insights ---
@@ -217,6 +217,56 @@ def fetch_instagram_metrics():
 
 # ===== ATUALIZA JSON =====
 
+TRI_LABELS = {1: "1º tri", 2: "2º tri", 3: "3º tri", 4: "4º tri"}
+
+
+def quarter_of(day_str):
+    return (int(day_str[5:7]) - 1) // 3 + 1
+
+
+def recalcular_conteudo(data, year_str, q):
+    """
+    Recalcula feed/stories do trimestre a partir das séries diárias e
+    atualiza data['conteudo'][year][plat][q-1]. Preserva os demais campos
+    (alcance, reações etc.) que podem ter sido preenchidos manualmente.
+    """
+    conteudo = data.setdefault("conteudo", {})
+    conteudo.setdefault(year_str, {})
+
+    for plat in ("facebook", "instagram"):
+        series_plat = data["series"].get(plat, {})
+        pub_series  = series_plat.get("publicacoes") or {}
+        str_series  = series_plat.get("stories") or {}
+
+        feed_total    = sum(v for d, v in pub_series.items()
+                            if d[:4] == year_str and quarter_of(d) == q)
+        stories_total = sum(v for d, v in str_series.items()
+                            if d[:4] == year_str and quarter_of(d) == q)
+
+        if feed_total == 0 and stories_total == 0:
+            continue
+
+        plat_list = conteudo[year_str].setdefault(plat, [None, None, None, None])
+        while len(plat_list) < 4:
+            plat_list.append(None)
+
+        existing = plat_list[q - 1]
+        if existing is None:
+            plat_list[q - 1] = {
+                "t":                 TRI_LABELS[q],
+                "feed":              feed_total,
+                "stories":           stories_total,
+                "alcance":           0,
+                "alcanceStories":    0,
+                "reacoes":           0,
+                "comentarios":       0,
+                "compartilhamentos": 0,
+            }
+        else:
+            existing["feed"]    = feed_total
+            existing["stories"] = stories_total
+
+
 def update_json(fb_metrics, ig_metrics):
     path = "dados/metricas.json"
     with open(path, "r", encoding="utf-8") as f:
@@ -229,6 +279,12 @@ def update_json(fb_metrics, ig_metrics):
         data["series"]["instagram"].setdefault(key, {})[yesterday] = value
 
     data["atualizado"] = yesterday
+
+    # Recalcula o resumo trimestral (conteudo) a partir das séries acumuladas
+    year_str = yesterday[:4]
+    q        = quarter_of(yesterday)
+    recalcular_conteudo(data, year_str, q)
+    print(f"  Conteudo {year_str} {TRI_LABELS[q]} atualizado.")
 
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
