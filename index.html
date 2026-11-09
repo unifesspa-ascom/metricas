@@ -7,7 +7,7 @@
 <meta name="description" content="Painel público de métricas das redes sociais da UNIFESSPA: visualizações, alcance, interações e seguidores do Facebook e do Instagram, com comparativo anual e relatório trimestral.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#eef0ef" media="(prefers-color-scheme:light)">
-<meta name="theme-color" content="#10140f" media="(prefers-color-scheme:dark)">
+<meta name="theme-color" content="#10140f" media="(prefers-color-scheme:dark)h">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="pt_BR">
 <meta property="og:site_name" content="ASCOM UNIFESSPA">
@@ -193,9 +193,9 @@ var METR={
   interacoes:{n:'Interações',t:'sum',c:'--c3'},
   cliques:{n:'Cliques no link',t:'sum',c:'--c4'},
   visitas:{n:'Visitas ao perfil',t:'sum',c:'--c1'},
-  seguidores:{n:'Novos seguidores',t:'sum',c:'--c2'}
+  seguidores:{n:'Novos seguidores',t:'sum',c:'--c2'},  publicacoes:{n:'Publicações (feed)',t:'sum',c:'--c3'},  stories:{n:'Stories publicados',t:'sum',c:'--c4'}
 };
-var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores'];
+var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores','publicacoes','stories'];
 var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 var DATA=null, local=false, LOGO=(document.querySelector('.brand img')||{}).src||'';
 var st={view:'painel',plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',bucketAuto:true,cap:true};
