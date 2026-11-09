@@ -1,0 +1,39 @@
+name: Atualizar Metricas
+
+on:
+  schedule:
+    # 06:00 UTC = 03:00 Brasilia (UTC-3)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-metrics:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: pip install requests
+
+      - name: Coletar e atualizar metricas
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: "447748898661292"
+        run: python scripts/update_metrics.py
+
+      - name: Commit e push (se houver alteracoes)
+        run: |
+          git config --global user.name  'ASCOM Bot'
+          git config --global user.email 'ascom@unifesspa.edu.br'
+          git add dados/metricas.json
+          git diff --quiet --staged || git commit -m "chore: atualiza metricas $(date +%Y-%m-%d)"
+          git push
