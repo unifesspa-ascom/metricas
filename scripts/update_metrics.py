@@ -9,7 +9,7 @@ Variaveis de ambiente necessarias:
 """
 
 import os
-import jsonh
+import json
 import sys
 import requests
 from datetime import date, timedelta
