@@ -44,6 +44,14 @@ on:
         options:
           - 'false'
           - 'true'
+      skip_engagement:
+        description: 'No modo conteudo, pular busca de engajamento (mais rápido, só conta posts)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   backfill:
@@ -76,6 +84,9 @@ jobs:
           fi
           if [ "${{ github.event.inputs.skip_instagram }}" = "true" ]; then
             ARGS="$ARGS --skip-instagram"
+          fi
+          if [ "${{ github.event.inputs.skip_engagement }}" = "true" ]; then
+            ARGS="$ARGS --skip-engagement"
           fi
 
           echo "args=$ARGS" >> $GITHUB_OUTPUT
