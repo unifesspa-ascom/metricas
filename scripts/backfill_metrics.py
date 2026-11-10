@@ -23,6 +23,7 @@ import json
 import sys
 import argparse
 import requests
+import time
 from datetime import date, timedelta
 
 API_VERSION = "v21.0"
@@ -37,29 +38,47 @@ TRI_MONTHS   = {1: (1, 3), 2: (4, 6), 3: (7, 9), 4: (10, 12)}
 
 # ───────────────────────── utilidades ──────────────────────────
 
-def api_get(url, params):
-    r = requests.get(url, params=params, timeout=30)
-    if not r.ok:
-        try:
-            err = r.json()
-            print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
-        except Exception:
-            print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
-        r.raise_for_status()
-    data = r.json()
-    if "error" in data:
-        raise RuntimeError(f"API error: {data['error']}")
-    return data
+def api_get(url, params, _retries=5):
+    """Faz GET na API com retry automático em caso de rate limit (403 transitório)."""
+    for attempt in range(_retries):
+        r = requests.get(url, params=params, timeout=30)
+        if r.status_code == 403:
+            try:
+                err = r.json().get("error", {})
+            except Exception:
+                err = {}
+            if err.get("is_transient") or err.get("code") == 4:
+                wait = 60 * (attempt + 1)
+                print(f"  Rate limit atingido – aguardando {wait}s (tentativa {attempt+1}/{_retries})...", file=sys.stderr)
+                time.sleep(wait)
+                continue
+        if not r.ok:
+            try:
+                err = r.json()
+                print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
+            except Exception:
+                print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
+            r.raise_for_status()
+        data = r.json()
+        if "error" in data:
+            raise RuntimeError(f"API error: {data['error']}")
+        return data
+    raise RuntimeError(f"Rate limit persistente após {_retries} tentativas.")
 
 
 def count_paged(url, params):
-    """Conta todos os itens seguindo paginação."""
+    """Conta todos os itens seguindo paginação com pausa entre páginas."""
     total = 0
+    page = 0
     while url:
         data = api_get(url, params)
-        total += len(data.get("data", []))
+        items = data.get("data", [])
+        total += len(items)
         url = data.get("paging", {}).get("next")
         params = {}
+        page += 1
+        if url:
+            time.sleep(1)  # pausa entre páginas para não estourar rate limit
     return total
 
 
