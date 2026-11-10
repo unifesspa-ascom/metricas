@@ -1,21 +1,30 @@
 #!/usr/bin/env python3
 """
-Preenche dados históricos de publicacoes e stories no metricas.json.
+Preenche dados históricos de publicações, stories e engajamento no metricas.json.
 
 Modos de uso:
 
-  1) Atualizar resumos trimestrais (rápido – 1 chamada de API por trimestre):
+  1) Atualizar resumos trimestrais com engajamento (alcance, reações, comentários,
+     compartilhamentos) via Facebook Batch API:
      python scripts/backfill_metrics.py --mode conteudo --start-year 2024 --end-year 2026
 
-  2) Preencher séries diárias (1 chamada por dia – use para intervalos curtos):
+  2) Apenas contar publicações, sem buscar engajamento (mais rápido):
+     python scripts/backfill_metrics.py --mode conteudo --start-year 2026 --skip-engagement
+
+  3) Preencher séries diárias (1 chamada por dia – use para intervalos curtos):
      python scripts/backfill_metrics.py --mode series --start 2026-07-01 --end 2026-11-07
 
-  3) Ambos ao mesmo tempo:
+  4) Ambos ao mesmo tempo:
      python scripts/backfill_metrics.py --mode ambos --start-year 2024 --end-year 2026
 
 Variáveis de ambiente necessárias:
-  FB_PAGE_ACCESS_TOKEN  -- Token permanente da página
+  FB_PAGE_ACCESS_TOKEN  -- Token permanente da página (Page Access Token)
   FB_PAGE_ID            -- ID da página (padrão: 447748898661292)
+
+Notas:
+  - alcanceStories não está disponível via API (stories expiram em 24h); permanece 0.
+  - Posts colaborativos publicados por parceiros não aparecem em /media; apenas posts
+    publicados diretamente pela conta são contabilizados.
 """
 
 import os
@@ -69,17 +78,118 @@ def api_get(url, params, _retries=5):
 def count_paged(url, params):
     """Conta todos os itens seguindo paginação com pausa entre páginas."""
     total = 0
-    page = 0
     while url:
         data = api_get(url, params)
-        items = data.get("data", [])
-        total += len(items)
+        total += len(data.get("data", []))
         url = data.get("paging", {}).get("next")
         params = {}
-        page += 1
         if url:
             time.sleep(1)  # pausa entre páginas para não estourar rate limit
     return total
+
+
+def collect_paged_items(url, params):
+    """Coleta todos os itens seguindo paginação. Retorna lista de dicts."""
+    items = []
+    while url:
+        page = api_get(url, params)
+        items.extend(page.get("data", []))
+        url = page.get("paging", {}).get("next")
+        params = {}
+        if url:
+            time.sleep(1)
+    return items
+
+
+# ───────────────────────── engajamento (Batch API) ─────────────────
+
+def _batch_post(batch_requests):
+    """Envia uma chamada Batch API do Facebook (máx. 50 sub-requests por chamada)."""
+    r = requests.post(
+        f"https://graph.facebook.com/{API_VERSION}",
+        data={"access_token": TOKEN, "batch": json.dumps(batch_requests)},
+        timeout=60,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def batch_ig_post_insights(media_ids):
+    """Busca reach e shares de posts do Instagram via Facebook Batch API (lotes de 50).
+    Stories não têm insights persistentes e devem ser excluídos da lista.
+    Retorna dict {media_id: {"reach": int, "shares": int}}."""
+    if not media_ids:
+        return {}
+    result = {}
+    for i in range(0, len(media_ids), 50):
+        chunk = media_ids[i:i + 50]
+        batch = [
+            {"method": "GET", "relative_url": f"{mid}/insights?metric=reach,shares"}
+            for mid in chunk
+        ]
+        try:
+            responses = _batch_post(batch)
+            for mid, resp in zip(chunk, responses):
+                entry = {"reach": 0, "shares": 0}
+                if resp and resp.get("code", 200) == 200:
+                    try:
+                        body = json.loads(resp.get("body", "{}"))
+                        for item in body.get("data", []):
+                            name = item.get("name")
+                            val  = (item.get("values") or [{}])[0].get("value", 0)
+                            if name == "reach":
+                                entry["reach"]  = int(val) if isinstance(val, (int, float)) else 0
+                            elif name == "shares":
+                                entry["shares"] = int(val) if isinstance(val, (int, float)) else 0
+                    except Exception:
+                        pass
+                result[mid] = entry
+        except Exception as e:
+            print(f"  Aviso batch IG insights: {e}", file=sys.stderr)
+            for mid in chunk:
+                result.setdefault(mid, {"reach": 0, "shares": 0})
+        if i + 50 < len(media_ids):
+            time.sleep(2)
+    return result
+
+
+def batch_fb_post_engagement(post_ids):
+    """Busca reações, comentários e compartilhamentos de posts do Facebook via Batch API (lotes de 50).
+    Retorna dict {post_id: {"reacoes": int, "comentarios": int, "compartilhamentos": int}}."""
+    if not post_ids:
+        return {}
+    result = {}
+    for i in range(0, len(post_ids), 50):
+        chunk = post_ids[i:i + 50]
+        batch = [
+            {"method": "GET",
+             "relative_url": f"{pid}?fields=reactions.summary(true),comments.summary(true),shares"}
+            for pid in chunk
+        ]
+        try:
+            responses = _batch_post(batch)
+            for pid, resp in zip(chunk, responses):
+                entry = {"reacoes": 0, "comentarios": 0, "compartilhamentos": 0}
+                if resp and resp.get("code", 200) == 200:
+                    try:
+                        body = json.loads(resp.get("body", "{}"))
+                        entry["reacoes"] = (
+                            body.get("reactions", {}).get("summary", {}).get("total_count", 0)
+                        )
+                        entry["comentarios"] = (
+                            body.get("comments", {}).get("summary", {}).get("total_count", 0)
+                        )
+                        entry["compartilhamentos"] = body.get("shares", {}).get("count", 0)
+                    except Exception:
+                        pass
+                result[pid] = entry
+        except Exception as e:
+            print(f"  Aviso batch FB engagement: {e}", file=sys.stderr)
+            for pid in chunk:
+                result.setdefault(pid, {"reacoes": 0, "comentarios": 0, "compartilhamentos": 0})
+        if i + 50 < len(post_ids):
+            time.sleep(2)
+    return result
 
 
 def quarter_of(day_str):
@@ -118,24 +228,36 @@ def get_ig_user_id():
 
 # ───────────────────────── MODO CONTEUDO ───────────────────────
 
-def fetch_quarter_counts(year, q, ig_user_id=None):
-    """Conta publicações e stories no trimestre via API (uma chamada por plataforma)."""
+def fetch_quarter_counts(year, q, ig_user_id=None, skip_engagement=False):
+    """Conta publicações e stories no trimestre e (por padrão) busca métricas de engajamento."""
     since, until, _ = quarter_range(year, q)
     result = {}
 
-    # Facebook feed posts
+    # ── Facebook feed posts ──────────────────────────────────────
     try:
-        fb_feed = count_paged(
+        fb_items = collect_paged_items(
             f"{BASE_URL}/{PAGE_ID}/published_posts",
             {"since": since, "until": until, "access_token": TOKEN, "fields": "id"},
         )
-        result["facebook"] = {"feed": fb_feed}
+        fb_feed = len(fb_items)
+        fb_post_ids = [item["id"] for item in fb_items]
+        result["facebook"] = {"feed": fb_feed, "reacoes": 0, "comentarios": 0, "compartilhamentos": 0}
         print(f"    FB feed:    {fb_feed}")
+
+        if not skip_engagement and fb_post_ids:
+            print(f"    Buscando engajamento de {len(fb_post_ids)} posts FB…")
+            fb_eng = batch_fb_post_engagement(fb_post_ids)
+            result["facebook"]["reacoes"]          = sum(v["reacoes"]          for v in fb_eng.values())
+            result["facebook"]["comentarios"]       = sum(v["comentarios"]       for v in fb_eng.values())
+            result["facebook"]["compartilhamentos"] = sum(v["compartilhamentos"] for v in fb_eng.values())
+            print(f"      reações={result['facebook']['reacoes']}  "
+                  f"comentários={result['facebook']['comentarios']}  "
+                  f"compartilhamentos={result['facebook']['compartilhamentos']}")
     except Exception as e:
         print(f"    Aviso FB feed: {e}", file=sys.stderr)
-        result["facebook"] = {"feed": 0}
+        result["facebook"] = {"feed": 0, "reacoes": 0, "comentarios": 0, "compartilhamentos": 0}
 
-    # Facebook stories
+    # ── Facebook stories ─────────────────────────────────────────
     try:
         fb_stories = count_paged(
             f"{BASE_URL}/{PAGE_ID}/stories",
@@ -147,46 +269,73 @@ def fetch_quarter_counts(year, q, ig_user_id=None):
         print(f"    Aviso FB stories: {e}", file=sys.stderr)
         result["facebook"]["stories"] = 0
 
-    # Instagram
+    # ── Instagram ────────────────────────────────────────────────
     if ig_user_id:
         try:
             ig_feed = ig_stories = 0
+            ig_feed_ids    = []   # IDs dos posts (não-stories) para buscar insights
+            ig_like_sum    = 0
+            ig_comment_sum = 0
+
             url = f"{BASE_URL}/{ig_user_id}/media"
             params = {
-                "fields":       "media_type,timestamp",
-                "limit":        100,
+                "fields": "id,media_type,timestamp,like_count,comments_count",
+                "limit":  100,
                 "access_token": TOKEN,
             }
             stop = False
             while url and not stop:
                 data_page = api_get(url, params)
                 for item in data_page.get("data", []):
-                    ts = item.get("timestamp", "")[:10]  # "YYYY-MM-DD"
-                    if ts < since:          # passou do início do trimestre: encerra
+                    ts = item.get("timestamp", "")[:10]
+                    if ts < since:
                         stop = True
                         break
-                    if ts >= until:         # ainda mais recente que o trimestre: pula
+                    if ts >= until:
                         continue
                     if item.get("media_type") == "STORY":
                         ig_stories += 1
                     else:
                         ig_feed += 1
+                        ig_feed_ids.append(item["id"])
+                        ig_like_sum    += item.get("like_count",    0) or 0
+                        ig_comment_sum += item.get("comments_count", 0) or 0
                 url = data_page.get("paging", {}).get("next")
                 params = {}
                 if url and not stop:
                     time.sleep(1)
-            result["instagram"] = {"feed": ig_feed, "stories": ig_stories}
-            print(f"    IG feed:    {ig_feed}")
+
+            result["instagram"] = {
+                "feed": ig_feed, "stories": ig_stories,
+                "alcance": 0, "alcanceStories": 0,
+                "reacoes": ig_like_sum,
+                "comentarios": ig_comment_sum,
+                "compartilhamentos": 0,
+            }
+            print(f"    IG feed:    {ig_feed}  (curtidas={ig_like_sum}, coments={ig_comment_sum})")
             print(f"    IG stories: {ig_stories}")
+
+            if not skip_engagement and ig_feed_ids:
+                print(f"    Buscando reach/shares de {len(ig_feed_ids)} posts IG…")
+                ig_ins = batch_ig_post_insights(ig_feed_ids)
+                result["instagram"]["alcance"]           = sum(v["reach"]  for v in ig_ins.values())
+                result["instagram"]["compartilhamentos"] = sum(v["shares"] for v in ig_ins.values())
+                print(f"      alcance={result['instagram']['alcance']}  "
+                      f"compartilhamentos={result['instagram']['compartilhamentos']}")
+
         except Exception as e:
             print(f"    Aviso IG: {e}", file=sys.stderr)
-            result["instagram"] = {"feed": 0, "stories": 0}
+            result["instagram"] = {
+                "feed": 0, "stories": 0,
+                "alcance": 0, "alcanceStories": 0,
+                "reacoes": 0, "comentarios": 0, "compartilhamentos": 0,
+            }
 
     return result
 
 
-def run_conteudo(data, start_year, end_year, ig_user_id=None):
-    """Atualiza data['conteudo'] com contagens reais de publicações por trimestre."""
+def run_conteudo(data, start_year, end_year, ig_user_id=None, skip_engagement=False):
+    """Atualiza data['conteudo'] com contagens reais de publicações e métricas de engajamento."""
     conteudo = data.setdefault("conteudo", {})
     today = date.today()
 
@@ -197,7 +346,7 @@ def run_conteudo(data, start_year, end_year, ig_user_id=None):
                 break  # trimestre no futuro
 
             print(f"\n  {q}º tri {year}  ({since} → {last_day_str}):")
-            counts = fetch_quarter_counts(year, q, ig_user_id)
+            counts = fetch_quarter_counts(year, q, ig_user_id, skip_engagement=skip_engagement)
 
             str_year = str(year)
             conteudo.setdefault(str_year, {})
@@ -209,21 +358,27 @@ def run_conteudo(data, start_year, end_year, ig_user_id=None):
 
                 existing = plat_list[q - 1]
                 if existing is None:
-                    # Cria entrada zerada — equipe pode preencher alcance/reações manualmente
                     plat_list[q - 1] = {
                         "t":                 TRI_LABELS[q],
                         "feed":              vals.get("feed", 0),
                         "stories":           vals.get("stories", 0),
-                        "alcance":           0,
-                        "alcanceStories":    0,
-                        "reacoes":           0,
-                        "comentarios":       0,
-                        "compartilhamentos": 0,
+                        "alcance":           vals.get("alcance", 0),
+                        "alcanceStories":    vals.get("alcanceStories", 0),
+                        "reacoes":           vals.get("reacoes", 0),
+                        "comentarios":       vals.get("comentarios", 0),
+                        "compartilhamentos": vals.get("compartilhamentos", 0),
                     }
                 else:
-                    # Atualiza só feed/stories; preserva alcance, reações etc.
-                    existing["feed"]    = vals.get("feed", existing.get("feed", 0))
+                    existing["feed"]    = vals.get("feed",    existing.get("feed", 0))
                     existing["stories"] = vals.get("stories", existing.get("stories", 0))
+                    # Atualiza engajamento se a API retornou valores > 0
+                    # (preserva dados inseridos manualmente se a API falhar/retornar 0)
+                    for key in ("alcance", "reacoes", "comentarios", "compartilhamentos"):
+                        api_val = vals.get(key, 0)
+                        if api_val > 0:
+                            existing[key] = api_val
+                    # alcanceStories nunca vem da API (stories expiram); não sobrescreve
+
 
 
 # ───────────────────────── MODO SERIES ─────────────────────────
@@ -395,6 +550,8 @@ def main():
 
     parser.add_argument("--skip-instagram", action="store_true",
                         help="Pular dados do Instagram")
+    parser.add_argument("--skip-engagement", action="store_true",
+                        help="No modo conteudo, pular busca de engajamento (mais rápido, só conta posts)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Mostrar o que seria feito sem salvar o arquivo")
 
@@ -417,7 +574,8 @@ def main():
     # Executar modos
     if args.mode in ("conteudo", "ambos"):
         print(f"\n=== MODO CONTEUDO ({args.start_year} → {args.end_year}) ===")
-        run_conteudo(data, args.start_year, args.end_year, ig_user_id)
+        run_conteudo(data, args.start_year, args.end_year, ig_user_id,
+                     skip_engagement=args.skip_engagement)
 
     if args.mode in ("series", "ambos"):
         if not args.start or not args.end:
