@@ -193,9 +193,9 @@ var METR={
   interacoes:{n:'Interações',t:'sum',c:'--c3'},
   cliques:{n:'Cliques no link',t:'sum',c:'--c4'},
   visitas:{n:'Visitas ao perfil',t:'sum',c:'--c1'},
-  seguidores:{n:'Novos seguidores',t:'sum',c:'--c2'},  publicacoes:{n:'Produção de conteúdo',t:'sum',c:'--c3'},  stories:{n:'Stories publicados',t:'sum',c:'--c4'}
+  seguidores:{n:'Novos seguidores',t:'sum',c:'--c2'},  publicacoes:{n:'Produção de conteúdo',t:'sum',c:'--c3'},  stories:{n:'Stories publicados',t:'sum',c:'--c4'},  visualizacoesStories:{n:'Viz. stories',t:'sum',c:'--c1'}
 };
-var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores','publicacoes','stories'];
+var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores','publicacoes','stories','visualizacoesStories'];
 var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
 var DATA=null, local=false, LOGO=(document.querySelector('.brand img')||{}).src||'';
 var st={view:'painel',plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',bucketAuto:true,cap:true};
@@ -290,11 +290,13 @@ function parseCsv(txt,fname){
   var t=slug(title.replace(/\s+d[oa]\s+(facebook|instagram)/i,'').replace(/facebook|instagram/i,''));
   var key=null;
   if(t.indexOf('visualizadores')===0)key='visualizadores';
+  else if(t.indexOf('visualiza')===0&&t.indexOf('histori')>=0)key='visualizacoesStories';
   else if(t.indexOf('visualiza')===0)key='visualizacoes';
   else if(t.indexOf('intera')===0)key='interacoes';
   else if(t.indexOf('clique')===0)key='cliques';
   else if(t.indexOf('visita')===0)key='visitas';
   else if(t.indexOf('seguidores')===0)key='seguidores';
+  else if(t.indexOf('histori')===0||t.indexOf('impres')===0)key='visualizacoesStories';
   else key=t||'metrica';
   if(!METR[key])METR[key]={n:title.replace(/\s+d[oa]\s+(facebook|instagram)/i,''),t:'sum',c:'--c3'};
   return {plat:plat,key:key,rows:rows,nome:fname,nomeMetrica:(METR[key]||{}).n||key};
@@ -508,20 +510,66 @@ function yoyTable(mets){
 }
 
 
-/* ---------- conteúdo publicado (relatório anual) ---------- */
+/* ---------- conteúdo publicado (dados automáticos por trimestre) ---------- */
 function conteudoPanel(){
-  var C=DATA.conteudo;if(!C)return '';
-  var anos=Object.keys(C).sort().reverse(),h='';
-  anos.forEach(function(a){
-    var q=(C[a]||{})[st.plat];if(!q||!q.length)return;
-    var T={feed:0,stories:0,alc:0,r:0,c:0,s:0};
-    var rows=q.map(function(x){
-      var al=(x.alcance||0)+(x.alcanceStories||0);
-      T.feed+=x.feed||0;T.stories+=x.stories||0;T.alc+=al;T.r+=x.reacoes||0;T.c+=x.comentarios||0;T.s+=x.compartilhamentos||0;
-      return '<tr><td>'+esc(x.t)+'</td><td>'+fmt(x.feed||0)+'</td><td>'+fmt(x.stories||0)+'</td><td>'+fmt(al)+'</td><td>'+fmt(x.reacoes||0)+'</td><td>'+fmt(x.comentarios||0)+'</td><td>'+fmt(x.compartilhamentos||0)+'</td></tr>';
+  var ser=(DATA.series||{})[st.plat]||{};
+  var metsC=['publicacoes','stories','visualizacoesStories','visualizacoes','alcance','interacoes'];
+  var allD={};
+  metsC.forEach(function(m){Object.keys(ser[m]||{}).forEach(function(d){allD[d]=1})});
+  var datas=Object.keys(allD).sort();
+  if(!datas.length)return '';
+
+  /* group by year-quarter */
+  var byYQ={};
+  datas.forEach(function(d){
+    var y=d.slice(0,4),mo=parseInt(d.slice(5,7),10),q=Math.ceil(mo/3),k=y+'-'+q;
+    if(!byYQ[k])byYQ[k]={y:y,q:q,feed:0,stories:0,vizS:0,viz:0,alc:0,alcN:0,int:0};
+    var b=byYQ[k];
+    b.feed+=(ser.publicacoes||{})[d]||0;
+    b.stories+=(ser.stories||{})[d]||0;
+    b.vizS+=(ser.visualizacoesStories||{})[d]||0;
+    b.viz+=(ser.visualizacoes||{})[d]||0;
+    var av=(ser.alcance||{})[d];if(av!==undefined){b.alc+=av;b.alcN++;}
+    b.int+=(ser.interacoes||{})[d]||0;
+  });
+
+  var yqKeys=Object.keys(byYQ).sort().reverse();
+  var years=[];
+  yqKeys.forEach(function(k){var y=byYQ[k].y;if(years.indexOf(y)<0)years.push(y);});
+
+  var hasFeed=yqKeys.some(function(k){return byYQ[k].feed>0});
+  var hasStories=yqKeys.some(function(k){return byYQ[k].stories>0});
+  var hasVizS=yqKeys.some(function(k){return byYQ[k].vizS>0});
+  var hasViz=yqKeys.some(function(k){return byYQ[k].viz>0});
+  var hasAlc=yqKeys.some(function(k){return byYQ[k].alcN>0});
+  var hasInt=yqKeys.some(function(k){return byYQ[k].int>0});
+
+  var cols=[];
+  if(hasFeed)cols.push({k:'feed',n:'Feed'});
+  if(hasStories)cols.push({k:'stories',n:'Stories pub.'});
+  if(hasVizS)cols.push({k:'vizS',n:'Viz. stories'});
+  if(hasViz)cols.push({k:'viz',n:'Visualizações'});
+  if(hasAlc)cols.push({k:'alc',n:'Alcance (média/dia)'});
+  if(hasInt)cols.push({k:'int',n:'Interações'});
+  if(!cols.length)return '';
+
+  function rowVal(b,k){
+    if(k==='alc')return b.alcN?Math.round(b.alc/b.alcN):0;
+    return b[k]||0;
+  }
+  var thead='<tr><th>Trimestre</th>'+cols.map(function(c){return '<th>'+c.n+'</th>'}).join('')+'</tr>';
+
+  var h='';
+  years.forEach(function(y){
+    var yKeys=yqKeys.filter(function(k){return byYQ[k].y===y});
+    var T={feed:0,stories:0,vizS:0,viz:0,alc:0,alcN:0,int:0};
+    var rows=yKeys.map(function(k){
+      var b=byYQ[k];
+      T.feed+=b.feed;T.stories+=b.stories;T.vizS+=b.vizS;T.viz+=b.viz;T.alc+=b.alc;T.alcN+=b.alcN;T.int+=b.int;
+      return '<tr><td>'+b.q+'º tri</td>'+cols.map(function(c){return '<td>'+fmt(rowVal(b,c.k))+'</td>'}).join('')+'</tr>';
     }).join('');
-    rows+='<tr class="tot"><td>Total</td><td>'+fmt(T.feed)+'</td><td>'+fmt(T.stories)+'</td><td>'+fmt(T.alc)+'</td><td>'+fmt(T.r)+'</td><td>'+fmt(T.c)+'</td><td>'+fmt(T.s)+'</td></tr>';
-    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(a)+'</h2><p class="sub">Dados trimestrais do relatório anual da ASCOM. Fonte: '+esc(C[a].fonte||'relatório anual')+'.</p><div class="tw"><table><thead><tr><th>Trimestre</th><th>Feed</th><th>Stories</th><th>Alcance</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="note">O alcance do relatório soma os alcances de cada trimestre'+(st.plat==='facebook'?' (só do feed, o Facebook não informa o alcance dos stories)':' (feed e stories)')+', por isso não é comparável com o alcance diário do painel acima. Reações, comentários e compartilhamentos referem-se às publicações de feed.</p></div>';
+    rows+='<tr class="tot"><td>Total</td>'+cols.map(function(c){return '<td>'+fmt(rowVal(T,c.k))+'</td>'}).join('')+'</tr>';
+    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(y)+'</h2><p class="sub">Dados calculados automaticamente dos CSVs importados do Meta Business Suite.</p><div class="tw"><table><thead>'+thead+'</thead><tbody>'+rows+'</tbody></table></div></div>';
   });
   return h;
 }
@@ -699,7 +747,7 @@ function render(){
   if(mets.some(function(m){return mi(m).t==='avg'}))nm.push('Alcance e Visualizadores contam pessoas ou contas únicas por dia — são apresentados como média diária para evitar contar a mesma pessoa mais de uma vez.');
   if(st.plat==='instagram'&&mets.indexOf('visualizacoes')>=0)nm.push('As visualizações exportadas com a conta do Instagram somam Instagram e Facebook (cerca de 1% do total vem do Facebook). Os demais indicadores são só do Instagram.');
   nm.push('n/d indica que o Meta não tem dados comparativos para o período anterior.');
-  nm.push('Produção de conteúdo: a coluna Feed conta publicações no feed; a coluna Stories conta stories publicados. Os números vêm do relatório trimestral da ASCOM e podem não coincidir com os totais diários acima.');
+  nm.push('Produção de conteúdo: Feed = publicações no feed; Stories pub. = stories publicados; Viz. stories = visualizações dos stories. Dados calculados trimestralmente a partir dos CSVs do Meta Business Suite.');
   h+='<div class="panel" style="background:var(--surface2,#f8f9f8)"><h2 style="font-size:.8em;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Notas metodológicas</h2><ul style="margin:.4em 0 0;padding-left:1.3em;color:var(--muted);font-size:.82em;line-height:1.6">'+nm.map(function(n){return '<li>'+n+'</li>'}).join('')+'</ul></div>';
   app.innerHTML=h;
   $('bk').value=st.bucket;$('cap').checked=st.cap;
