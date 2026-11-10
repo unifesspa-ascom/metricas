@@ -594,6 +594,13 @@ function relPlat(p,Y,q,primeira){
   var rows=mets.map(function(m){
     var mm=mi(m),v=kv(m,rng(m,cur.a,cur.b)),okp=comparavel(m,pq.a,pq.b),oky=comparavel(m,py.a,py.b);
     var vp=okp?kv(m,rng(m,pq.a,pq.b)):null,vy=oky?kv(m,rng(m,py.a,py.b)):null;
+        if(m==='publicacoes'||m==='stories'){
+      var field=m==='publicacoes'?'feed':'stories';var Cc=DATA.conteudo||{};
+      var getC=function(yr,qi){var a=Cc[yr]&&Cc[yr][p];return a&&a[qi]?a[qi][field]||0:null;};
+      var cf=getC(Y,q-1);if(!v&&cf!==null)v=cf;
+      var cfp=getC(q===1?Y-1:Y,q===1?3:q-2);if(!vp&&cfp!==null){vp=cfp;okp=true;}
+      var cfy=getC(Y-1,q-1);if(!vy&&cfy!==null){vy=cfy;oky=true;}
+    }
     return '<tr><td>'+esc(mm.n)+(mm.t==='avg'?' (média/dia)':'')+'</td><td><b>'+fmt(v)+'</b></td><td>'+(okp?fmt(vp):'n/d')+'</td><td>'+ptxt(v,vp)+'</td><td>'+(oky?fmt(vy):'n/d')+'</td><td>'+ptxt(v,vy)+'</td></tr>';
   }).join('');
   var mini=mets.map(function(m){
