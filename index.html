@@ -545,8 +545,9 @@ function conteudoPanel(){
   var hasInt=yqKeys.some(function(k){return byYQ[k].int>0});
 
   var cols=[];
-  if(hasFeed)cols.push({k:'feed',n:'Feed'});
-  if(hasStories)cols.push({k:'stories',n:'Stories pub.'});
+  if(hasFeed||hasStories)cols.push({k:'pub',n:'Publicações'});
+  if(hasFeed&&hasStories)cols.push({k:'feed',n:'↳ Feed'});
+  if(hasFeed&&hasStories)cols.push({k:'stories',n:'↳ Stories'});
   if(hasVizS)cols.push({k:'vizS',n:'Viz. stories'});
   if(hasViz)cols.push({k:'viz',n:'Visualizações'});
   if(hasAlc)cols.push({k:'alc',n:'Alcance (média/dia)'});
@@ -554,6 +555,7 @@ function conteudoPanel(){
   if(!cols.length)return '';
 
   function rowVal(b,k){
+    if(k==='pub')return (b.feed||0)+(b.stories||0);
     if(k==='alc')return b.alcN?Math.round(b.alc/b.alcN):0;
     return b[k]||0;
   }
