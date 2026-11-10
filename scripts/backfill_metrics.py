@@ -150,21 +150,31 @@ def fetch_quarter_counts(year, q, ig_user_id=None):
     # Instagram
     if ig_user_id:
         try:
-            media = api_get(
-                f"{BASE_URL}/{ig_user_id}/media",
-                params={
-                    "fields":       "media_type,timestamp",
-                    "since":        since,
-                    "until":        until,
-                    "access_token": TOKEN,
-                },
-            )
             ig_feed = ig_stories = 0
-            for item in media.get("data", []):
-                if item.get("media_type") == "STORY":
-                    ig_stories += 1
-                else:
-                    ig_feed += 1
+            url = f"{BASE_URL}/{ig_user_id}/media"
+            params = {
+                "fields":       "media_type,timestamp",
+                "limit":        100,
+                "access_token": TOKEN,
+            }
+            stop = False
+            while url and not stop:
+                data_page = api_get(url, params)
+                for item in data_page.get("data", []):
+                    ts = item.get("timestamp", "")[:10]  # "YYYY-MM-DD"
+                    if ts < since:          # passou do início do trimestre: encerra
+                        stop = True
+                        break
+                    if ts >= until:         # ainda mais recente que o trimestre: pula
+                        continue
+                    if item.get("media_type") == "STORY":
+                        ig_stories += 1
+                    else:
+                        ig_feed += 1
+                url = data_page.get("paging", {}).get("next")
+                params = {}
+                if url and not stop:
+                    time.sleep(1)
             result["instagram"] = {"feed": ig_feed, "stories": ig_stories}
             print(f"    IG feed:    {ig_feed}")
             print(f"    IG stories: {ig_stories}")
