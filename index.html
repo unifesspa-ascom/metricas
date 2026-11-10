@@ -193,7 +193,7 @@ var METR={
   interacoes:{n:'Interações',t:'sum',c:'--c3'},
   cliques:{n:'Cliques no link',t:'sum',c:'--c4'},
   visitas:{n:'Visitas ao perfil',t:'sum',c:'--c1'},
-  seguidores:{n:'Novos seguidores',t:'sum',c:'--c2'},  publicacoes:{n:'Publicações (feed)',t:'sum',c:'--c3'},  stories:{n:'Stories publicados',t:'sum',c:'--c4'}
+  seguidores:{n:'Novos seguidores',t:'sum',c:'--c2'},  publicacoes:{n:'Produção de conteúdo',t:'sum',c:'--c3'},  stories:{n:'Stories publicados',t:'sum',c:'--c4'}
 };
 var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores','publicacoes','stories'];
 var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
@@ -518,10 +518,10 @@ function conteudoPanel(){
     var rows=q.map(function(x){
       var al=(x.alcance||0)+(x.alcanceStories||0);
       T.feed+=x.feed||0;T.stories+=x.stories||0;T.alc+=al;T.r+=x.reacoes||0;T.c+=x.comentarios||0;T.s+=x.compartilhamentos||0;
-      return '<tr><td>'+esc(x.t)+'</td><td>'+fmt((x.feed||0)+(x.stories||0))+'</td><td>'+fmt(x.feed||0)+'</td><td>'+fmt(x.stories||0)+'</td><td>'+fmt(al)+'</td><td>'+fmt(x.reacoes||0)+'</td><td>'+fmt(x.comentarios||0)+'</td><td>'+fmt(x.compartilhamentos||0)+'</td></tr>';
+      return '<tr><td>'+esc(x.t)+'</td><td>'+fmt(x.feed||0)+'</td><td>'+fmt(x.stories||0)+'</td><td>'+fmt(al)+'</td><td>'+fmt(x.reacoes||0)+'</td><td>'+fmt(x.comentarios||0)+'</td><td>'+fmt(x.compartilhamentos||0)+'</td></tr>';
     }).join('');
-    rows+='<tr class="tot"><td>Total</td><td>'+fmt(T.feed+T.stories)+'</td><td>'+fmt(T.feed)+'</td><td>'+fmt(T.stories)+'</td><td>'+fmt(T.alc)+'</td><td>'+fmt(T.r)+'</td><td>'+fmt(T.c)+'</td><td>'+fmt(T.s)+'</td></tr>';
-    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(a)+'</h2><p class="sub">Dados trimestrais do relatório anual da ASCOM. Fonte: '+esc(C[a].fonte||'relatório anual')+'.</p><div class="tw"><table><thead><tr><th>Trimestre</th><th>Publicações</th><th>Feed</th><th>Stories</th><th>Alcance</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="note">O alcance do relatório soma os alcances de cada trimestre'+(st.plat==='facebook'?' (só do feed, o Facebook não informa o alcance dos stories)':' (feed e stories)')+', por isso não é comparável com o alcance diário do painel acima. Reações, comentários e compartilhamentos referem-se às publicações de feed.</p></div>';
+    rows+='<tr class="tot"><td>Total</td><td>'+fmt(T.feed)+'</td><td>'+fmt(T.stories)+'</td><td>'+fmt(T.alc)+'</td><td>'+fmt(T.r)+'</td><td>'+fmt(T.c)+'</td><td>'+fmt(T.s)+'</td></tr>';
+    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(a)+'</h2><p class="sub">Dados trimestrais do relatório anual da ASCOM. Fonte: '+esc(C[a].fonte||'relatório anual')+'.</p><div class="tw"><table><thead><tr><th>Trimestre</th><th>Feed</th><th>Stories</th><th>Alcance</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="note">O alcance do relatório soma os alcances de cada trimestre'+(st.plat==='facebook'?' (só do feed, o Facebook não informa o alcance dos stories)':' (feed e stories)')+', por isso não é comparável com o alcance diário do painel acima. Reações, comentários e compartilhamentos referem-se às publicações de feed.</p></div>';
   });
   return h;
 }
@@ -621,9 +621,9 @@ function relPlat(p,Y,q,primeira){
   [[Y,q],[Y-1,q]].forEach(function(yq){
     var c=C[yq[0]]&&C[yq[0]][p]&&C[yq[0]][p][yq[1]-1];if(!c)return;
     var al=(c.alcance||0)+(c.alcanceStories||0);
-    cont+='<tr><td>'+yq[1]+'º tri de '+yq[0]+'</td><td>'+fmt((c.feed||0)+(c.stories||0))+'</td><td>'+fmt(c.feed||0)+'</td><td>'+fmt(c.stories||0)+'</td><td>'+fmt(al)+'</td><td>'+fmt(c.reacoes||0)+'</td><td>'+fmt(c.comentarios||0)+'</td><td>'+fmt(c.compartilhamentos||0)+'</td></tr>';
+    cont+='<tr><td>'+yq[1]+'º tri de '+yq[0]+'</td><td>'+fmt(c.feed||0)+'</td><td>'+fmt(c.stories||0)+'</td><td>'+fmt(al)+'</td><td>'+fmt(c.reacoes||0)+'</td><td>'+fmt(c.comentarios||0)+'</td><td>'+fmt(c.compartilhamentos||0)+'</td></tr>';
   });
-  if(cont)cont='<h3>Publicações e engajamento</h3><div class="tw"><table><thead><tr><th>Período</th><th>Publicações</th><th>Feed</th><th>Stories</th><th>Alcance</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+cont+'</tbody></table></div><p class="nt">Dados do relatório trimestral da ASCOM. O alcance dessa tabela soma o alcance de cada publicação e não é comparável ao alcance médio diário do quadro acima.</p>';
+  if(cont)cont='<h3>Publicações e engajamento</h3><div class="tw"><table><thead><tr><th>Período</th><th>Feed</th><th>Stories</th><th>Alcance</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+cont+'</tbody></table></div><p class="nt">Dados do relatório trimestral da ASCOM. O alcance dessa tabela soma o alcance de cada publicação e não é comparável ao alcance médio diário do quadro acima.</p>';
   var notas=[];
   if(p==='instagram'&&mets.indexOf('visualizacoes')>=0)notas.push('As visualizações exportadas pela conta do Instagram somam Instagram e Facebook (cerca de 1% do total vem do Facebook).');
   if(mets.some(function(m){return mi(m).t==='avg'}))notas.push('Alcance e visualizadores contam contas ou pessoas únicas por dia, por isso são apresentados como média diária.');
@@ -679,7 +679,13 @@ function render(){
   var presets=[['ano','Este ano'],['mes','Mês atual'],['90','90 dias'],['30','30 dias'],['7','7 dias'],['tudo','Tudo']];
   var h='<div class="bar-ctl noprint"><div class="chips">'+presets.map(function(p){return '<button class="chip" data-pre="'+p[0]+'" aria-pressed="'+(st.preset===p[0])+'">'+p[1]+'</button>'}).join('')+'</div>'+
     '<div class="dt"><span>De</span><input id="di" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="'+br(st.ini)+'" aria-label="Data inicial"><span>até</span><input id="df" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="'+br(st.fim)+'" aria-label="Data final"></div></div>';
-  h+='<div class="grid">'+mets.map(function(m){
+  h+='<div class="grid">'+mets.filter(function(m){return m!=='stories'}).map(function(m){
+    if(m==='publicacoes'){
+      var af=rng('publicacoes',st.ini,st.fim),as_=rng('stories',st.ini,st.fim);
+      var vf=kv('publicacoes',af),vs=kv('stories',as_);
+      var sel=(st.met==='publicacoes'||st.met==='stories');
+      return '<button class="kpi" data-met="publicacoes" aria-pressed="'+sel+'"><div class="n">Produção de conteúdo</div><div class="v"><small style="font-size:.6em;font-weight:700;letter-spacing:.04em;opacity:.7">FEED</small> '+fmt(vf)+'&emsp;<small style="font-size:.6em;font-weight:700;letter-spacing:.04em;opacity:.7">STORIES</small> '+fmt(vs)+'</div>'+spark(af,css('--c3'))+'</button>';
+    }
     var a=rng(m,st.ini,st.fim),b=rng(m,pi,pf),v=kv(m,a),pv=kv(m,b),mm=mi(m),dl='';
     var hasPrev=comparavel(m,pi,pf);
     if(hasPrev&&pv>0){var pc=(v-pv)/pv*100;dl='<div class="d '+(pc>0.5?'up':pc<-0.5?'dn':'eq')+'">'+(pc>0?'+':'')+pc.toLocaleString('pt-BR',{maximumFractionDigits:1})+'% '+lbl+'</div>'}else dl='<div class="d eq">sem dados do período anterior</div>';
@@ -689,6 +695,12 @@ function render(){
   h+='<div class="panel"><div class="ph"><div><h2>'+esc(mm.n)+'</h2><p class="sub">'+br(st.ini)+' a '+br(st.fim)+'</p></div><div class="opts"><label>Agrupar por <select id="bk"><option value="dia">dia</option><option value="semana">semana</option><option value="mes">mês</option></select></label><label><input type="checkbox" id="cap"> Limitar picos</label></div></div><div id="chart"></div>'+(mm.nota?'<p class="note">'+esc(mm.nota)+'</p>':'')+(st.plat==='instagram'&&st.met==='visualizacoes'?'<p class="note">Atenção: o arquivo de Visualizações exportado com a conta do Instagram selecionada soma Instagram e Facebook (cerca de 1% do total vem do Facebook). Os demais indicadores são só do Instagram.</p>':'')+'</div>';
   h+='<div class="panel"><h2>Comparativo anual</h2><p class="sub">Mesmo intervalo do ano anterior.</p>'+yoyTable(mets)+'</div>'+mesCmp()+conteudoPanel();
   h+='<div class="twocol"><div class="panel"><h2>Resumo por mês</h2><p class="sub">Totais mensais dentro do período selecionado.</p><div class="tw">'+monthTable(mets)+'</div></div><div class="panel"><h2>Dias de maior destaque</h2><p class="sub">'+esc(mm.n)+', maiores valores do período.</p><div class="tw">'+topDays()+'</div></div></div>';
+  var nm=[];
+  if(mets.some(function(m){return mi(m).t==='avg'}))nm.push('Alcance e Visualizadores contam pessoas ou contas únicas por dia — são apresentados como média diária para evitar contar a mesma pessoa mais de uma vez.');
+  if(st.plat==='instagram'&&mets.indexOf('visualizacoes')>=0)nm.push('As visualizações exportadas com a conta do Instagram somam Instagram e Facebook (cerca de 1% do total vem do Facebook). Os demais indicadores são só do Instagram.');
+  nm.push('n/d indica que o Meta não tem dados comparativos para o período anterior.');
+  nm.push('Produção de conteúdo: a coluna Feed conta publicações no feed; a coluna Stories conta stories publicados. Os números vêm do relatório trimestral da ASCOM e podem não coincidir com os totais diários acima.');
+  h+='<div class="panel" style="background:var(--surface2,#f8f9f8)"><h2 style="font-size:.8em;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Notas metodológicas</h2><ul style="margin:.4em 0 0;padding-left:1.3em;color:var(--muted);font-size:.82em;line-height:1.6">'+nm.map(function(n){return '<li>'+n+'</li>'}).join('')+'</ul></div>';
   app.innerHTML=h;
   $('bk').value=st.bucket;$('cap').checked=st.cap;
   drawChart();
@@ -708,7 +720,7 @@ function monthTable(mets){
     }).join('')+'</tr>';
   }).join('');
   var foot='<tr><td>Total</td>'+show.map(function(m,i){return '<td>'+(mi(m).t==='sum'?fmt(tot[i]):'-')+'</td>'}).join('')+'</tr>';
-  return '<table><thead>'+head+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table>'+(show.some(function(m){return mi(m).t==='avg'})?'<p class="note">Visualizadores e Alcance aparecem como média diária de pessoas ou contas únicas.</p>':'');
+  return '<table><thead>'+head+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table>';
 }
 function topDays(){
   var a=rng(st.met,st.ini,st.fim).filter(function(x){return x.v>0}).sort(function(x,y){return y.v-x.v}).slice(0,8);
