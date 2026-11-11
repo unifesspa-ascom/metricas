@@ -4,7 +4,8 @@ Coleta dados de publicações individuais do Facebook e Instagram via Meta Graph
 e atualiza o arquivo dados/posts.json.
 
 Roda diariamente via GitHub Actions, logo após update_metrics.py.
-Coleta as publicações criadas ontem com suas métricas principais.
+Estratégia: janela deslizante de 60 dias — re-busca métricas de todos os posts
+recentes, pois alcance e engajamento continuam crescendo após a publicação.
 
 Variáveis de ambiente necessárias:
   FB_PAGE_ACCESS_TOKEN  -- Token de acesso permanente da página
@@ -14,6 +15,7 @@ Variáveis de ambiente necessárias:
 import os
 import json
 import sys
+import time
 import requests
 from datetime import date, timedelta
 
@@ -23,26 +25,48 @@ BASE_URL    = f"https://graph.facebook.com/{API_VERSION}"
 PAGE_ID = os.environ.get("FB_PAGE_ID", "447748898661292")
 TOKEN   = os.environ["FB_PAGE_ACCESS_TOKEN"]
 
-yesterday = (date.today() - timedelta(days=1)).isoformat()
-since     = yesterday
-until_    = date.today().isoformat()
+# Janela deslizante: re-busca posts dos últimos N dias para capturar
+# crescimento de métricas após publicação.
+ROLLING_DAYS = 60
+
+today  = date.today()
+since  = (today - timedelta(days=ROLLING_DAYS)).isoformat()
+until_ = today.isoformat()
 
 POSTS_PATH = "dados/posts.json"
 
+# Pausa entre chamadas de insights para evitar rate limit
+INSIGHT_SLEEP = 0.3
 
-def api_get(url, params):
-    r = requests.get(url, params=params, timeout=30)
-    if not r.ok:
+
+def api_get(url, params, retries=3):
+    """Faz GET com retry em caso de rate limit ou erro temporário."""
+    for attempt in range(retries):
         try:
-            err = r.json()
-            print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
-        except Exception:
-            print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
-    r.raise_for_status()
-    data = r.json()
-    if "error" in data:
-        raise RuntimeError(f"API error: {data['error']}")
-    return data
+            r = requests.get(url, params=params, timeout=45)
+            if r.status_code == 429 or r.status_code >= 500:
+                wait = 10 * (attempt + 1)
+                print(f"  Rate limit / erro {r.status_code}, aguardando {wait}s...",
+                      file=sys.stderr)
+                time.sleep(wait)
+                continue
+            if not r.ok:
+                try:
+                    err = r.json()
+                    print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
+                except Exception:
+                    print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
+            r.raise_for_status()
+            data = r.json()
+            if "error" in data:
+                raise RuntimeError(f"API error: {data['error']}")
+            return data
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt < retries - 1:
+                time.sleep(5)
+                continue
+            raise
+    raise RuntimeError(f"Falha após {retries} tentativas")
 
 
 def get_ig_user_id():
@@ -59,8 +83,13 @@ def get_ig_user_id():
 # ===== FACEBOOK =====
 
 def fetch_fb_post_insights(post_id):
-    """Busca métricas de um post individual do Facebook."""
+    """Busca métricas de um post individual do Facebook.
+
+    Nota diagnóstica: loga os nomes dos campos retornados pela API para detectar
+    renomeações (ex: post_impressions → views) conforme Meta vai alterando.
+    """
     try:
+        time.sleep(INSIGHT_SLEEP)
         data = api_get(
             f"{BASE_URL}/{post_id}/insights",
             params={
@@ -70,14 +99,23 @@ def fetch_fb_post_insights(post_id):
             },
         )
         result = {}
+        campos_disponiveis = []
         for entry in data.get("data", []):
             name = entry["name"]
-            # post_reactions_by_type_total retorna dict {like:N, love:N, ...}
+            campos_disponiveis.append(name)
             if entry.get("values"):
                 value = entry["values"][0].get("value", 0)
             else:
                 value = entry.get("value", 0)
             result[name] = value
+
+        # Log diagnóstico: detecta campos ausentes / renomeados
+        esperados = {"post_impressions", "post_impressions_unique",
+                     "post_engaged_users", "post_reactions_by_type_total"}
+        ausentes = esperados - set(campos_disponiveis)
+        if ausentes:
+            print(f"    AVISO campos FB ausentes em {post_id}: {ausentes}", file=sys.stderr)
+
         return result
     except Exception as e:
         print(f"    Aviso insights FB {post_id}: {e}", file=sys.stderr)
@@ -97,24 +135,24 @@ def fetch_fb_posts(since_date, until_date):
         "limit": 100,
     }
 
+    page_num = 0
     while url:
+        page_num += 1
         data = api_get(url, params)
-        for item in data.get("data", []):
+        items = data.get("data", [])
+        print(f"  FB página {page_num}: {len(items)} posts...")
+
+        for item in items:
             post_date = item.get("created_time", "")[:10]
+            insights  = fetch_fb_post_insights(item["id"])
 
-            # Métricas de insights por post
-            insights = fetch_fb_post_insights(item["id"])
-
-            # Reações: pode ser dict {like:N, love:N, ...} ou inteiro
-            reac_raw = insights.get("post_reactions_by_type_total", 0)
+            reac_raw   = insights.get("post_reactions_by_type_total", 0)
             reac_total = (sum(reac_raw.values())
                           if isinstance(reac_raw, dict) else int(reac_raw or 0))
 
-            # Compartilhamentos e comentários vêm nos campos do post
             shares   = item.get("shares", {}).get("count", 0)
             comments = item.get("comments", {}).get("summary", {}).get("total_count", 0)
 
-            # Trecho do texto (120 chars)
             msg = item.get("message", "")
             txt = msg[:120].strip() if msg else ""
 
@@ -132,20 +170,23 @@ def fetch_fb_posts(since_date, until_date):
                 "comp": shares,
             }
             posts.append(post)
-            print(f"  FB post {post_date}: {txt[:60] or '(sem texto)'!r} | vis={post['vis']}")
 
-        # Paginação — próximas páginas trazem os params embutidos na URL
         url    = data.get("paging", {}).get("next")
         params = {}
 
+    print(f"  FB total: {len(posts)} posts na janela de {ROLLING_DAYS} dias")
     return posts
 
 
 # ===== INSTAGRAM =====
 
 def fetch_ig_media_insights(media_id):
-    """Busca métricas de uma mídia individual do Instagram."""
+    """Busca métricas de uma mídia individual do Instagram.
+
+    Nota diagnóstica: loga campos ausentes para detectar renomeações da API.
+    """
     try:
+        time.sleep(INSIGHT_SLEEP)
         data = api_get(
             f"{BASE_URL}/{media_id}/insights",
             params={
@@ -154,11 +195,18 @@ def fetch_ig_media_insights(media_id):
             },
         )
         result = {}
+        campos_disponiveis = []
         for entry in data.get("data", []):
+            campos_disponiveis.append(entry["name"])
             if entry.get("values"):
                 result[entry["name"]] = entry["values"][0].get("value", 0)
             else:
                 result[entry["name"]] = entry.get("value", 0)
+
+        ausentes = {"impressions", "reach", "saved"} - set(campos_disponiveis)
+        if ausentes:
+            print(f"    AVISO campos IG ausentes em {media_id}: {ausentes}", file=sys.stderr)
+
         return result
     except Exception as e:
         print(f"    Aviso insights IG {media_id}: {e}", file=sys.stderr)
@@ -166,8 +214,8 @@ def fetch_ig_media_insights(media_id):
 
 
 def fetch_ig_posts(ig_user_id, since_date, until_date):
-    """Coleta publicações do Instagram num intervalo de datas (com paginação).
-    Stories são ignorados — já contados em metricas.json.
+    """Coleta publicações do Instagram num intervalo de datas. Stories ignorados.
+    Reels são coletados com tipo 'REEL' — o dashboard os conta como Feed.
     """
     posts = []
     url = f"{BASE_URL}/{ig_user_id}/media"
@@ -179,25 +227,27 @@ def fetch_ig_posts(ig_user_id, since_date, until_date):
         "limit": 100,
     }
 
+    page_num = 0
     while url:
+        page_num += 1
         data = api_get(url, params)
-        for item in data.get("data", []):
+        items = data.get("data", [])
+        print(f"  IG página {page_num}: {len(items)} mídias...")
+
+        for item in items:
             if item.get("media_type") == "STORY":
-                continue  # stories já são contados em metricas.json
+                continue
 
             post_date = item.get("timestamp", "")[:10]
+            insights  = fetch_ig_media_insights(item["id"])
 
-            # Insights por mídia
-            insights = fetch_ig_media_insights(item["id"])
-
-            # Legenda resumida
             cap = item.get("caption", "")
             txt = cap[:120].strip() if cap else ""
 
             post = {
                 "id":   item["id"],
                 "data": post_date,
-                "tipo": item.get("media_type", ""),
+                "tipo": item.get("media_type", ""),  # IMAGE, VIDEO, REEL, CAROUSEL_ALBUM
                 "txt":  txt,
                 "url":  item.get("permalink", ""),
                 "vis":  insights.get("impressions", 0),
@@ -207,11 +257,11 @@ def fetch_ig_posts(ig_user_id, since_date, until_date):
                 "salv": insights.get("saved", 0),
             }
             posts.append(post)
-            print(f"  IG post {post_date}: {txt[:60] or '(sem legenda)'!r} | vis={post['vis']}")
 
         url    = data.get("paging", {}).get("next")
         params = {}
 
+    print(f"  IG total: {len(posts)} posts na janela de {ROLLING_DAYS} dias")
     return posts
 
 
@@ -229,28 +279,30 @@ def load_posts():
 def merge_posts(existing_list, new_posts):
     """Mescla novos posts na lista existente, atualizando por ID."""
     idx = {p["id"]: i for i, p in enumerate(existing_list)}
+    added = updated = 0
     for post in new_posts:
         pid = post["id"]
         if pid in idx:
-            existing_list[idx[pid]] = post   # atualiza métricas
+            existing_list[idx[pid]] = post
+            updated += 1
         else:
             existing_list.append(post)
-    # Ordena por data decrescente
+            added += 1
     existing_list.sort(key=lambda p: p.get("data", ""), reverse=True)
+    print(f"  → {added} adicionados, {updated} atualizados")
     return existing_list
 
 
 def save_posts(data):
     with open(POSTS_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-    print(f"\nposts.json salvo — {len(data['facebook'])} posts FB, "
-          f"{len(data['instagram'])} posts IG no total")
+    print(f"\nposts.json salvo — {len(data['facebook'])} FB, {len(data['instagram'])} IG")
 
 
 # ===== MAIN =====
 
 def main():
-    print(f"Coletando publicações de {yesterday}...\n")
+    print(f"Coletando publicações: janela de {ROLLING_DAYS} dias ({since} → {until_})\n")
 
     data = load_posts()
 
@@ -258,7 +310,6 @@ def main():
     try:
         fb_new = fetch_fb_posts(since, until_)
         data["facebook"] = merge_posts(data["facebook"], fb_new)
-        print(f"  {len(fb_new)} publicação(ões) coletada(s)")
     except Exception as e:
         print(f"  ERRO Facebook posts: {e}", file=sys.stderr)
 
@@ -267,11 +318,10 @@ def main():
         ig_user_id = get_ig_user_id()
         ig_new = fetch_ig_posts(ig_user_id, since, until_)
         data["instagram"] = merge_posts(data["instagram"], ig_new)
-        print(f"  {len(ig_new)} publicação(ões) coletada(s)")
     except Exception as e:
         print(f"  ERRO Instagram posts: {e}", file=sys.stderr)
 
-    data["atualizado"] = yesterday
+    data["atualizado"] = today.isoformat()
     save_posts(data)
 
 
