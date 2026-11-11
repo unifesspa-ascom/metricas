@@ -502,7 +502,8 @@ function resumoTexto(plat,y,q,cur,pq,py){
   if(pqS!==null)t3+=' ('+pct(S,pqS)+' vs '+pqLabel+')';
   if(pyS!==null)t3+=', '+pct(S,pyS)+' vs '+pyLabel;
   t3+='.';
-  var t4='Cliques no link: <b>'+fmt(C)+'</b>.'+(VP>0?' Visitas ao perfil: <b>'+fmt(VP)+'</b>.':'');
+  var showVP=kpiDefs(plat).some(function(d){return d.k==='visitas'});
+  var t4='Cliques no link: <b>'+fmt(C)+'</b>.'+(showVP&&VP>0?' Visitas ao perfil: <b>'+fmt(VP)+'</b>.':'');
   return '<p>'+t1+'</p><p>'+t2+'</p><p>'+t3+'</p><p>'+t4+'</p>';
 }
 
@@ -657,7 +658,8 @@ function renderPainel(){
       '</button>';
   }).join('');
   /* ---- Barras mensais ---- */
-  var kDef=defs.find(function(d){return d.k===st.qmet})||defs[0];
+  var kDef=defs.find(function(d){return d.k===st.qmet});
+  if(!kDef){kDef=defs[0];st.qmet=defs[0]?defs[0].k:st.qmet;}
   var barsLabel=kDef?kDef.l:st.qmet;
   var barsHTML=monthBarsHTML(plat,Y,q,cur,st.qmet);
   /* ---- Tabela mensal ---- */
@@ -706,7 +708,7 @@ function renderPainel(){
     '</div>';
   /* Exploração livre */
   if(plat!=='consolidado'){
-    h+='<details class="sec-panel" id="expl-det"><summary>Exploração livre</summary>'+explHTML+'</details>';
+    h+='<details class="sec-panel noprint" id="expl-det"><summary>Exploração livre</summary>'+explHTML+'</details>';
   }
   app.innerHTML=h;
   /* Pós-render */
@@ -858,78 +860,13 @@ function drawChart(){
 function niceStep(x){if(x<=0)return 1;var e=Math.pow(10,Math.floor(Math.log10(x))),f=x/e;return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*e}
 function short(v){if(v>=1e6)return (v/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mi';if(v>=1e3)return (v/1e3).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil';return v.toLocaleString('pt-BR')}
 
-/* =================== COMPARATIVO ANUAL (legado) =================== */
+/* =================== SÉRIE LEGADO (usa st.plat) =================== */
 var FZ={};
 function firstNZ(m){
   var ch=st.plat+'|'+m;
   if(FZ[ch]!==undefined)return FZ[ch];
   var o=(DATA.series[st.plat]||{})[m]||{},k=Object.keys(o).filter(function(d){return o[d]>0}).sort();
   return FZ[ch]=k.length?k[0]:null;
-}
-function yoyTable(mets){
-  var u=last(),Y=+u.slice(0,4),P=Y-1,md=u.slice(4);
-  var a=[Y+'-01-01',u],b=[P+'-01-01',P+md],c=[P+'-01-01',P+'-12-31'];
-  var rows=mets.map(function(m){
-    var mm=mi(m),ok=comparavel(m,b[0],b[1]);
-    var va=kv(m,rng(m,a[0],a[1])),vb=kv(m,rng(m,b[0],b[1])),vc=kv(m,rng(m,c[0],c[1]));
-    var dl='<span class="d eq">n/d</span>',cb='n/d',cc='n/d';
-    if(ok){cb=fmt(vb);cc=fmt(vc);if(vb>0){var p=(va-vb)/vb*100;dl='<span class="d '+(p>0.5?'up':p<-0.5?'dn':'eq')+'">'+(p>0?'+':'')+p.toLocaleString('pt-BR',{maximumFractionDigits:1})+'%</span>'}}
-    return '<tr><td>'+esc(mm.n)+(mm.t==='avg'?' (média/dia)':'')+'</td><td>'+fmt(va)+'</td><td>'+cb+'</td><td>'+dl+'</td><td>'+cc+'</td></tr>';
-  }).join('');
-  var inicios=mets.filter(function(m){return !comparavel(m,b[0],b[1])}).map(function(m){
-    var fz=firstNZ(m);return esc(mi(m).n)+(fz?' a partir de '+br(fz):' sem registro');
-  });
-  return '<div class="tw"><table><thead><tr><th>Métrica</th><th>'+br(a[0]).slice(0,5)+' a '+br(a[1]).slice(0,5)+'/'+Y+'</th><th>Mesmo período de '+P+'</th><th>Variação</th><th>'+P+' inteiro</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="note">n/d: o Meta não tem dados suficientes dessa métrica no período de '+P+'.'+(inicios.length?' O Meta passou a registrar: '+inicios.join('; ')+'.':'')+'</p>';
-}
-
-/* =================== CONTEÚDO PUBLICADO =================== */
-function conteudoPanel(){
-  var ser=(DATA.series||{})[st.plat]||{};
-  var metsC=['publicacoes','stories','visualizacoesStories','visualizacoes','alcance','interacoes'];
-  var allD={};
-  metsC.forEach(function(m){Object.keys(ser[m]||{}).forEach(function(d){allD[d]=1})});
-  var datas=Object.keys(allD).sort();
-  if(!datas.length)return '';
-  var byYQ={};
-  datas.forEach(function(d){
-    var y=d.slice(0,4),mo=parseInt(d.slice(5,7),10),q=Math.ceil(mo/3),k=y+'-'+q;
-    if(!byYQ[k])byYQ[k]={y:y,q:q,feed:0,stories:0,vizS:0,viz:0,alc:0,alcN:0,int:0};
-    var b=byYQ[k];
-    b.feed+=(ser.publicacoes||{})[d]||0;
-    b.stories+=(ser.stories||{})[d]||0;
-    b.vizS+=(ser.visualizacoesStories||{})[d]||0;
-    b.viz+=(ser.visualizacoes||{})[d]||0;
-    var av=(ser.alcance||{})[d];if(av!==undefined){b.alc+=av;b.alcN++;}
-    b.int+=(ser.interacoes||{})[d]||0;
-  });
-  var yqKeys=Object.keys(byYQ).sort().reverse();
-  var years=[];yqKeys.forEach(function(k){var y=byYQ[k].y;if(years.indexOf(y)<0)years.push(y)});
-  var hasFeed=yqKeys.some(function(k){return byYQ[k].feed>0}),hasStories=yqKeys.some(function(k){return byYQ[k].stories>0});
-  var hasVizS=yqKeys.some(function(k){return byYQ[k].vizS>0}),hasViz=yqKeys.some(function(k){return byYQ[k].viz>0});
-  var hasAlc=yqKeys.some(function(k){return byYQ[k].alcN>0}),hasInt=yqKeys.some(function(k){return byYQ[k].int>0});
-  var cols=[];
-  if(hasFeed||hasStories)cols.push({k:'pub',n:'Publicações'});
-  if(hasFeed&&hasStories)cols.push({k:'feed',n:'↳ Feed'});
-  if(hasFeed&&hasStories)cols.push({k:'stories',n:'↳ Stories'});
-  if(hasVizS)cols.push({k:'vizS',n:'Viz. stories'});
-  if(hasViz)cols.push({k:'viz',n:'Visualizações'});
-  if(hasAlc)cols.push({k:'alc',n:'Alcance (média/dia)'});
-  if(hasInt)cols.push({k:'int',n:'Interações'});
-  if(!cols.length)return '';
-  function rowVal(b,k){if(k==='pub')return (b.feed||0)+(b.stories||0);if(k==='alc')return b.alcN?Math.round(b.alc/b.alcN):0;return b[k]||0;}
-  var thead='<tr><th>Trimestre</th>'+cols.map(function(c){return '<th>'+c.n+'</th>'}).join('')+'</tr>';
-  var h='';
-  years.forEach(function(y){
-    var yKeys=yqKeys.filter(function(k){return byYQ[k].y===y});
-    var T={feed:0,stories:0,vizS:0,viz:0,alc:0,alcN:0,int:0};
-    var rows=yKeys.map(function(k){
-      var b=byYQ[k];T.feed+=b.feed;T.stories+=b.stories;T.vizS+=b.vizS;T.viz+=b.viz;T.alc+=b.alc;T.alcN+=b.alcN;T.int+=b.int;
-      return '<tr><td>'+b.q+'º tri</td>'+cols.map(function(c){return '<td>'+fmt(rowVal(b,c.k))+'</td>'}).join('')+'</tr>';
-    }).join('');
-    rows+='<tr class="tot"><td>Total</td>'+cols.map(function(c){return '<td>'+fmt(rowVal(T,c.k))+'</td>'}).join('')+'</tr>';
-    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(y)+'</h2><div class="tw"><table><thead>'+thead+'</thead><tbody>'+rows+'</tbody></table></div></div>';
-  });
-  return h;
 }
 
 /* =================== RELATÓRIO DETALHADO (legado) =================== */
