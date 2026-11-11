@@ -571,7 +571,7 @@ function conteudoPanel(){
       return '<tr><td>'+b.q+'º tri</td>'+cols.map(function(c){return '<td>'+fmt(rowVal(b,c.k))+'</td>'}).join('')+'</tr>';
     }).join('');
     rows+='<tr class="tot"><td>Total</td>'+cols.map(function(c){return '<td>'+fmt(rowVal(T,c.k))+'</td>'}).join('')+'</tr>';
-    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(y)+'</h2><p class="sub">Dados calculados automaticamente dos CSVs importados do Meta Business Suite.</p><div class="tw"><table><thead>'+thead+'</thead><tbody>'+rows+'</tbody></table></div></div>';
+    h+='<div class="panel"><h2>Publicações e engajamento em '+esc(y)+'</h2><p class="sub">Dados coletados automaticamente via Meta Graph API.</p><div class="tw"><table><thead>'+thead+'</thead><tbody>'+rows+'</tbody></table></div></div>';
   });
   return h;
 }
@@ -702,7 +702,7 @@ function relHTML(){
   var plats=Object.keys(NOMES).filter(function(p){return REL.plats[p]&&hasData(p)});
   h+='<div class="sheet"><div class="rh"><img src="'+LOGO+'" alt="UNIFESSPA ASCOM"><div><h1>Relatório trimestral das redes sociais</h1><p>'+REL.tri+'º trimestre de '+REL.ano+' ('+br(cur.a)+' a '+br(cur.b)+')</p><p>Universidade Federal do Sul e Sudeste do Pará, Assessoria de Comunicação</p></div></div>';
   h+=plats.map(function(p,i){return relPlat(p,REL.ano,REL.tri,i===0)}).join('');
-  h+='<div class="secao"><h2>Considerações finais</h2><div class="ed" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Considerações finais do relatório" data-f="final" data-ph="Clique aqui para escrever as considerações finais (opcional).">'+esc(edGet('final'))+'</div><p class="nt">Fonte: Meta Business Suite (exportações em CSV). Relatório gerado em '+br(iso(new Date()))+'.</p></div></div>';
+  h+='<div class="secao"><h2>Considerações finais</h2><div class="ed" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Considerações finais do relatório" data-f="final" data-ph="Clique aqui para escrever as considerações finais (opcional).">'+esc(edGet('final'))+'</div><p class="nt">Fonte: Meta Graph API (coleta automática diária). Relatório gerado em '+br(iso(new Date()))+'.</p></div></div>';
   return h;
 }
 
@@ -749,7 +749,7 @@ function render(){
   if(mets.some(function(m){return mi(m).t==='avg'}))nm.push('Alcance e Visualizadores contam pessoas ou contas únicas por dia — são apresentados como média diária para evitar contar a mesma pessoa mais de uma vez.');
   if(st.plat==='instagram'&&mets.indexOf('visualizacoes')>=0)nm.push('As visualizações exportadas com a conta do Instagram somam Instagram e Facebook (cerca de 1% do total vem do Facebook). Os demais indicadores são só do Instagram.');
   nm.push('n/d indica que o Meta não tem dados comparativos para o período anterior.');
-  nm.push('Produção de conteúdo: Feed = publicações no feed; Stories pub. = stories publicados; Viz. stories = visualizações dos stories. Dados calculados trimestralmente a partir dos CSVs do Meta Business Suite.');
+  nm.push('Produção de conteúdo: Feed = publicações no feed; Stories pub. = stories publicados; Viz. stories = visualizações dos stories. Dados de publicações coletados diariamente via Meta Graph API; alcance e engajamento do relatório trimestral da ASCOM.');
   h+='<div class="panel" style="background:var(--surface2,#f8f9f8)"><h2 style="font-size:.8em;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Notas metodológicas</h2><ul style="margin:.4em 0 0;padding-left:1.3em;color:var(--muted);font-size:.82em;line-height:1.6">'+nm.map(function(n){return '<li>'+n+'</li>'}).join('')+'</ul></div>';
   app.innerHTML=h;
   $('bk').value=st.bucket;$('cap').checked=st.cap;
@@ -764,7 +764,7 @@ function monthTable(mets){
     var a=k+'-01',y=+k.slice(0,4),mo=+k.slice(5),lastd=new Date(y,mo,0).getDate();
     var ia=a<st.ini?st.ini:a,fb=k+'-'+pad(lastd),ib=fb>st.fim?st.fim:fb;
     return '<tr><td>'+MESES[mo-1]+'/'+k.slice(0,4)+'</td>'+show.map(function(m,i){
-      var arr=rng(m,ia,ib),v=mi(m).t==='avg'?(arr.length?total(arr)/arr.length:0):total(arr);
+      var arr=rng(m,ia,ib),has=arr.filter(function(x){return x.has}),v=mi(m).t==='avg'?(has.length?total(has)/has.length:0):total(arr);
       if(mi(m).t==='sum')tot[i]+=v;
       return '<td>'+fmt(v)+'</td>';
     }).join('')+'</tr>';
