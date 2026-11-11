@@ -14,6 +14,7 @@ Uso:
   python scripts/backfill_metrics.py --year 2025 --skip-facebook
   python scripts/backfill_metrics.py --year 2025 --skip-instagram
   python scripts/backfill_metrics.py --year 2025 --dry-run   # mostra o que seria coletado sem salvar
+  python scripts/backfill_metrics.py --start 2026-10-07 --end 2026-11-07 --skip-instagram
 
 Variáveis de ambiente necessárias:
   FB_PAGE_ACCESS_TOKEN  -- Token de acesso permanente da página
@@ -136,6 +137,29 @@ def generate_months(year: int):
         else:
             until_ = date(year + 1, 1, 1).isoformat()
         yield since, until_, month, last_day
+
+
+def generate_windows(start: date, end: date):
+    """
+    Divide o intervalo [start, end] em janelas mensais para a API.
+    A API usa intervalos semi-abertos [since, until), então until do
+    último chunk é end + 1 dia para incluir o próprio end.
+    Yields (since_str, until_str, month_int, last_day_int).
+    """
+    cur = date(start.year, start.month, 1)
+    end_excl = end + timedelta(days=1)   # torna o intervalo exclusivo no lado direito
+    while cur <= end:
+        y, m = cur.year, cur.month
+        last_day = calendar.monthrange(y, m)[1]
+        since  = max(cur, start).isoformat()
+        # until: primeiro dia do mês seguinte, mas não além de end+1
+        if m < 12:
+            month_end = date(y, m + 1, 1)
+        else:
+            month_end = date(y + 1, 1, 1)
+        until_ = min(month_end, end_excl).isoformat()
+        yield since, until_, m, last_day
+        cur = month_end
 
 
 def quarter_of(day_str: str) -> int:
@@ -426,10 +450,16 @@ def recalcular_conteudo(data: dict, year_str: str):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Backfill de métricas diárias de conta para um ano completo."
+        description="Backfill de métricas diárias de conta para um ano completo ou intervalo específico."
     )
-    parser.add_argument("--year", type=int, default=2025,
-                        help="Ano a backfillar (padrão: 2025)")
+    parser.add_argument("--year", type=int, default=None,
+                        help="Ano a backfillar (padrão: 2025 quando --start/--end não usados)")
+    parser.add_argument("--start", type=str, default=None,
+                        help="Data inicial do intervalo ISO (AAAA-MM-DD). "
+                             "Requer --end. Substitui --year.")
+    parser.add_argument("--end", type=str, default=None,
+                        help="Data final do intervalo ISO (AAAA-MM-DD, inclusive). "
+                             "Requer --start. Substitui --year.")
     parser.add_argument("--skip-facebook", action="store_true",
                         help="Pula coleta do Facebook")
     parser.add_argument("--skip-instagram", action="store_true",
@@ -438,10 +468,33 @@ def main():
                         help="Exibe o que seria coletado sem gravar no JSON")
     args = parser.parse_args()
 
-    year     = args.year
-    year_str = str(year)
+    # Resolve intervalo de datas
+    if (args.start is None) != (args.end is None):
+        parser.error("--start e --end devem ser usados juntos.")
 
-    print(f"Backfill de métricas — ano {year}")
+    if args.start:
+        try:
+            start_date = date.fromisoformat(args.start)
+            end_date   = date.fromisoformat(args.end)
+        except ValueError as e:
+            parser.error(f"Data inválida: {e}")
+        if start_date > end_date:
+            parser.error("--start deve ser anterior ou igual a --end.")
+        # anos cobertos pelo intervalo (pode ser mais de um)
+        years_covered = sorted({d.year for d in
+                                 (start_date + timedelta(days=i)
+                                  for i in range((end_date - start_date).days + 1))})
+        windows = list(generate_windows(start_date, end_date))
+        mode_desc = f"{args.start} → {args.end}"
+    else:
+        year = args.year if args.year is not None else 2025
+        start_date = date(year, 1, 1)
+        end_date   = date(year, 12, 31)
+        years_covered = [year]
+        windows = list(generate_months(year))
+        mode_desc = f"ano {year}"
+
+    print(f"Backfill de métricas — {mode_desc}")
     print(f"  Facebook : {'IGNORADO' if args.skip_facebook  else 'SIM'}")
     print(f"  Instagram: {'IGNORADO' if args.skip_instagram else 'SIM'}")
     if args.dry_run:
@@ -467,8 +520,8 @@ def main():
 
     total_dias = {"facebook": 0, "instagram": 0}
 
-    for since, until_, month, _ in generate_months(year):
-        print(f"\n--- {year}-{month:02d} ({since} → {until_}) ---")
+    for since, until_, month, _ in windows:
+        print(f"\n--- {since[:7]} ({since} → {until_}) ---")
 
         # ===== FACEBOOK =====
         if not args.skip_facebook:
@@ -492,11 +545,8 @@ def main():
                 fb_series.setdefault("stories", {})
                 merge_series(fb_series["stories"], fb_sto)
 
-            # Relatório do mês
-            fb_reach_days = sum(1 for _ in fb_insights.get("alcance", {}) or
-                                fb_insights.get("visualizadores", {}))
-            fb_posts_sum  = sum(fb_pub.values())
-            fb_sto_sum    = sum(fb_sto.values())
+            fb_posts_sum = sum(fb_pub.values())
+            fb_sto_sum   = sum(fb_sto.values())
             print(f"    dias com métricas: {len(next(iter(fb_insights.values()), {}))}")
             print(f"    posts: {fb_posts_sum}  |  stories: {fb_sto_sum}")
 
@@ -528,8 +578,9 @@ def main():
 
     # ===== RECALCULA TRIMESTRES E SALVA =====
     if not args.dry_run:
-        print(f"\nRecalculando resumos trimestrais de {year_str}...")
-        recalcular_conteudo(data, year_str)
+        for yr in years_covered:
+            print(f"\nRecalculando resumos trimestrais de {yr}...")
+            recalcular_conteudo(data, str(yr))
 
         with open(METRICS_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
