@@ -1,39 +1,43 @@
 #!/usr/bin/env python3
 """
-Preenche dados históricos de publicações, stories e engajamento no metricas.json.
+Backfill de métricas diárias de conta para um ano completo.
 
-Modos de uso:
+Percorre o ano mês a mês (a API limita janelas a ~90 dias por chamada),
+coleta métricas de perfil do Facebook e do Instagram e preenche o arquivo
+dados/metricas.json com as séries históricas no mesmo formato que o
+update_metrics.py usa para dados correntes.
 
-  1) Atualizar resumos trimestrais com engajamento (alcance, reações, comentários,
-     compartilhamentos) via Facebook Batch API:
-     python scripts/backfill_metrics.py --mode conteudo --start-year 2024 --end-year 2026
+Ao final, recalcula os resumos trimestrais (conteudo) do ano.
 
-  2) Apenas contar publicações, sem buscar engajamento (mais rápido):
-     python scripts/backfill_metrics.py --mode conteudo --start-year 2026 --skip-engagement
-
-  3) Preencher séries diárias (1 chamada por dia – use para intervalos curtos):
-     python scripts/backfill_metrics.py --mode series --start 2026-07-01 --end 2026-11-07
-
-  4) Ambos ao mesmo tempo:
-     python scripts/backfill_metrics.py --mode ambos --start-year 2024 --end-year 2026
+Uso:
+  python scripts/backfill_metrics.py --year 2025
+  python scripts/backfill_metrics.py --year 2025 --skip-facebook
+  python scripts/backfill_metrics.py --year 2025 --skip-instagram
+  python scripts/backfill_metrics.py --year 2025 --dry-run   # mostra o que seria coletado sem salvar
 
 Variáveis de ambiente necessárias:
-  FB_PAGE_ACCESS_TOKEN  -- Token permanente da página (Page Access Token)
-  FB_PAGE_ID            -- ID da página (padrão: 447748898661292)
+  FB_PAGE_ACCESS_TOKEN  -- Token de acesso permanente da página
+  FB_PAGE_ID            -- ID da página do Facebook (padrão: 447748898661292)
 
-Notas:
-  - alcanceStories não está disponível via API (stories expiram em 24h); permanece 0.
-  - Posts colaborativos publicados por parceiros não aparecem em /media; apenas posts
-    publicados diretamente pela conta são contabilizados.
+Notas importantes:
+  - Alcance (reach) diário já é deduplificado por dia pela Meta, mas a soma
+    trimestral ainda pode contar a mesma pessoa em dias diferentes.
+    O Meta Business Suite mostra alcance único trimestral deduplificado, que
+    não está disponível diretamente via API — a divergência é esperada.
+  - Stories de mais de 24 horas já expiraram na API; o backfill retornará
+    0 para visualizações de stories antigos (normal).
+  - Posts colaborativos onde a Unifesspa é colaboradora NÃO aparecem no
+    endpoint /media — limitação da API, reflete na contagem de publicações.
 """
 
+import argparse
+import calendar
 import os
 import json
 import sys
-import argparse
-import requests
 import time
-from datetime import date, timedelta
+import requests
+from datetime import date, timedelta, datetime, timezone
 
 API_VERSION = "v21.0"
 BASE_URL    = f"https://graph.facebook.com/{API_VERSION}"
@@ -41,355 +45,27 @@ BASE_URL    = f"https://graph.facebook.com/{API_VERSION}"
 PAGE_ID = os.environ.get("FB_PAGE_ID", "447748898661292")
 TOKEN   = os.environ["FB_PAGE_ACCESS_TOKEN"]
 
-TRI_LABELS   = {1: "1º tri", 2: "2º tri", 3: "3º tri", 4: "4º tri"}
-TRI_MONTHS   = {1: (1, 3), 2: (4, 6), 3: (7, 9), 4: (10, 12)}
+METRICS_PATH = "dados/metricas.json"
 
+# Horário de Brasília (UTC-3) — mantém consistência com update_metrics.py
+BRT = timezone(timedelta(hours=-3))
 
-# ───────────────────────── utilidades ──────────────────────────
+TRI_LABELS = {1: "1º tri", 2: "2º tri", 3: "3º tri", 4: "4º tri"}
 
-def api_get(url, params, _retries=5):
-    """Faz GET na API com retry automático em caso de rate limit (403 transitório)."""
-    for attempt in range(_retries):
-        r = requests.get(url, params=params, timeout=30)
-        if r.status_code == 403:
-            try:
-                err = r.json().get("error", {})
-            except Exception:
-                err = {}
-            if err.get("is_transient") or err.get("code") == 4:
-                wait = 60 * (attempt + 1)
-                print(f"  Rate limit atingido – aguardando {wait}s (tentativa {attempt+1}/{_retries})...", file=sys.stderr)
-                time.sleep(wait)
-                continue
-        if not r.ok:
-            try:
-                err = r.json()
-                print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
-            except Exception:
-                print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
-            r.raise_for_status()
-        data = r.json()
-        if "error" in data:
-            raise RuntimeError(f"API error: {data['error']}")
-        return data
-    raise RuntimeError(f"Rate limit persistente após {_retries} tentativas.")
+# --- Métricas a coletar (mesmo conjunto de update_metrics.py) ---
 
-
-def count_paged(url, params):
-    """Conta todos os itens seguindo paginação com pausa entre páginas."""
-    total = 0
-    while url:
-        data = api_get(url, params)
-        total += len(data.get("data", []))
-        url = data.get("paging", {}).get("next")
-        params = {}
-        if url:
-            time.sleep(1)  # pausa entre páginas para não estourar rate limit
-    return total
-
-
-def collect_paged_items(url, params):
-    """Coleta todos os itens seguindo paginação. Retorna lista de dicts."""
-    items = []
-    while url:
-        page = api_get(url, params)
-        items.extend(page.get("data", []))
-        url = page.get("paging", {}).get("next")
-        params = {}
-        if url:
-            time.sleep(1)
-    return items
-
-
-# ───────────────────────── engajamento (Batch API) ─────────────────
-
-def _batch_post(batch_requests):
-    """Envia uma chamada Batch API do Facebook (máx. 50 sub-requests por chamada)."""
-    r = requests.post(
-        f"https://graph.facebook.com/{API_VERSION}",
-        data={"access_token": TOKEN, "batch": json.dumps(batch_requests)},
-        timeout=60,
-    )
-    r.raise_for_status()
-    return r.json()
-
-
-def batch_ig_post_insights(media_ids):
-    """Busca reach e shares de posts do Instagram via Facebook Batch API (lotes de 50).
-    Stories não têm insights persistentes e devem ser excluídos da lista.
-    Retorna dict {media_id: {"reach": int, "shares": int}}."""
-    if not media_ids:
-        return {}
-    result = {}
-    for i in range(0, len(media_ids), 50):
-        chunk = media_ids[i:i + 50]
-        batch = [
-            {"method": "GET", "relative_url": f"{mid}/insights?metric=reach,shares"}
-            for mid in chunk
-        ]
-        try:
-            responses = _batch_post(batch)
-            for mid, resp in zip(chunk, responses):
-                entry = {"reach": 0, "shares": 0}
-                if resp and resp.get("code", 200) == 200:
-                    try:
-                        body = json.loads(resp.get("body", "{}"))
-                        for item in body.get("data", []):
-                            name = item.get("name")
-                            val  = (item.get("values") or [{}])[0].get("value", 0)
-                            if name == "reach":
-                                entry["reach"]  = int(val) if isinstance(val, (int, float)) else 0
-                            elif name == "shares":
-                                entry["shares"] = int(val) if isinstance(val, (int, float)) else 0
-                    except Exception:
-                        pass
-                result[mid] = entry
-        except Exception as e:
-            print(f"  Aviso batch IG insights: {e}", file=sys.stderr)
-            for mid in chunk:
-                result.setdefault(mid, {"reach": 0, "shares": 0})
-        if i + 50 < len(media_ids):
-            time.sleep(2)
-    return result
-
-
-def batch_fb_post_engagement(post_ids):
-    """Busca reações, comentários e compartilhamentos de posts do Facebook via Batch API (lotes de 50).
-    Retorna dict {post_id: {"reacoes": int, "comentarios": int, "compartilhamentos": int}}."""
-    if not post_ids:
-        return {}
-    result = {}
-    for i in range(0, len(post_ids), 50):
-        chunk = post_ids[i:i + 50]
-        batch = [
-            {"method": "GET",
-             "relative_url": f"{pid}?fields=reactions.summary(true),comments.summary(true),shares"}
-            for pid in chunk
-        ]
-        try:
-            responses = _batch_post(batch)
-            for pid, resp in zip(chunk, responses):
-                entry = {"reacoes": 0, "comentarios": 0, "compartilhamentos": 0}
-                if resp and resp.get("code", 200) == 200:
-                    try:
-                        body = json.loads(resp.get("body", "{}"))
-                        entry["reacoes"] = (
-                            body.get("reactions", {}).get("summary", {}).get("total_count", 0)
-                        )
-                        entry["comentarios"] = (
-                            body.get("comments", {}).get("summary", {}).get("total_count", 0)
-                        )
-                        entry["compartilhamentos"] = body.get("shares", {}).get("count", 0)
-                    except Exception:
-                        pass
-                result[pid] = entry
-        except Exception as e:
-            print(f"  Aviso batch FB engagement: {e}", file=sys.stderr)
-            for pid in chunk:
-                result.setdefault(pid, {"reacoes": 0, "comentarios": 0, "compartilhamentos": 0})
-        if i + 50 < len(post_ids):
-            time.sleep(2)
-    return result
-
-
-def quarter_of(day_str):
-    return (int(day_str[5:7]) - 1) // 3 + 1
-
-
-def quarter_range(year, q):
-    """Retorna (since, until) para chamar a API – since=primeiro dia, until=primeiro dia do próximo tri."""
-    m1, m3 = TRI_MONTHS[q]
-    last_day = date(year, m3, 1)
-    # último dia do mês m3
-    if m3 == 12:
-        last_day = date(year, 12, 31)
-    else:
-        last_day = date(year, m3 + 1, 1) - timedelta(days=1)
-    today = date.today()
-    if last_day > today:
-        last_day = today
-    since = date(year, m1, 1).isoformat()
-    until = (last_day + timedelta(days=1)).isoformat()   # API usa until exclusivo
-    return since, until, last_day.isoformat()
-
-
-# ───────────────────────── Instagram ───────────────────────────
-
-def get_ig_user_id():
-    data = api_get(
-        f"{BASE_URL}/{PAGE_ID}",
-        params={"fields": "instagram_business_account", "access_token": TOKEN},
-    )
-    ig = data.get("instagram_business_account")
-    if not ig:
-        raise RuntimeError("Página sem conta Instagram Business vinculada.")
-    return ig["id"]
-
-
-# ───────────────────────── MODO CONTEUDO ───────────────────────
-
-def fetch_quarter_counts(year, q, ig_user_id=None, skip_engagement=False):
-    """Conta publicações e stories no trimestre e (por padrão) busca métricas de engajamento."""
-    since, until, _ = quarter_range(year, q)
-    result = {}
-
-    # ── Facebook feed posts ──────────────────────────────────────
-    try:
-        fb_items = collect_paged_items(
-            f"{BASE_URL}/{PAGE_ID}/published_posts",
-            {"since": since, "until": until, "access_token": TOKEN, "fields": "id"},
-        )
-        fb_feed = len(fb_items)
-        fb_post_ids = [item["id"] for item in fb_items]
-        result["facebook"] = {"feed": fb_feed, "reacoes": 0, "comentarios": 0, "compartilhamentos": 0}
-        print(f"    FB feed:    {fb_feed}")
-
-        if not skip_engagement and fb_post_ids:
-            print(f"    Buscando engajamento de {len(fb_post_ids)} posts FB…")
-            fb_eng = batch_fb_post_engagement(fb_post_ids)
-            result["facebook"]["reacoes"]          = sum(v["reacoes"]          for v in fb_eng.values())
-            result["facebook"]["comentarios"]       = sum(v["comentarios"]       for v in fb_eng.values())
-            result["facebook"]["compartilhamentos"] = sum(v["compartilhamentos"] for v in fb_eng.values())
-            print(f"      reações={result['facebook']['reacoes']}  "
-                  f"comentários={result['facebook']['comentarios']}  "
-                  f"compartilhamentos={result['facebook']['compartilhamentos']}")
-    except Exception as e:
-        print(f"    Aviso FB feed: {e}", file=sys.stderr)
-        result["facebook"] = {"feed": 0, "reacoes": 0, "comentarios": 0, "compartilhamentos": 0}
-
-    # ── Facebook stories ─────────────────────────────────────────
-    try:
-        fb_stories = count_paged(
-            f"{BASE_URL}/{PAGE_ID}/stories",
-            {"since": since, "until": until, "access_token": TOKEN, "fields": "id"},
-        )
-        result["facebook"]["stories"] = fb_stories
-        print(f"    FB stories: {fb_stories}")
-    except Exception as e:
-        print(f"    Aviso FB stories: {e}", file=sys.stderr)
-        result["facebook"]["stories"] = 0
-
-    # ── Instagram ────────────────────────────────────────────────
-    if ig_user_id:
-        try:
-            ig_feed = ig_stories = 0
-            ig_feed_ids    = []   # IDs dos posts (não-stories) para buscar insights
-            ig_like_sum    = 0
-            ig_comment_sum = 0
-
-            url = f"{BASE_URL}/{ig_user_id}/media"
-            params = {
-                "fields": "id,media_type,timestamp,like_count,comments_count",
-                "limit":  100,
-                "access_token": TOKEN,
-            }
-            stop = False
-            while url and not stop:
-                data_page = api_get(url, params)
-                for item in data_page.get("data", []):
-                    ts = item.get("timestamp", "")[:10]
-                    if ts < since:
-                        stop = True
-                        break
-                    if ts >= until:
-                        continue
-                    if item.get("media_type") == "STORY":
-                        ig_stories += 1
-                    else:
-                        ig_feed += 1
-                        ig_feed_ids.append(item["id"])
-                        ig_like_sum    += item.get("like_count",    0) or 0
-                        ig_comment_sum += item.get("comments_count", 0) or 0
-                url = data_page.get("paging", {}).get("next")
-                params = {}
-                if url and not stop:
-                    time.sleep(1)
-
-            result["instagram"] = {
-                "feed": ig_feed, "stories": ig_stories,
-                "alcance": 0, "alcanceStories": 0,
-                "reacoes": ig_like_sum,
-                "comentarios": ig_comment_sum,
-                "compartilhamentos": 0,
-            }
-            print(f"    IG feed:    {ig_feed}  (curtidas={ig_like_sum}, coments={ig_comment_sum})")
-            print(f"    IG stories: {ig_stories}")
-
-            if not skip_engagement and ig_feed_ids:
-                print(f"    Buscando reach/shares de {len(ig_feed_ids)} posts IG…")
-                ig_ins = batch_ig_post_insights(ig_feed_ids)
-                result["instagram"]["alcance"]           = sum(v["reach"]  for v in ig_ins.values())
-                result["instagram"]["compartilhamentos"] = sum(v["shares"] for v in ig_ins.values())
-                print(f"      alcance={result['instagram']['alcance']}  "
-                      f"compartilhamentos={result['instagram']['compartilhamentos']}")
-
-        except Exception as e:
-            print(f"    Aviso IG: {e}", file=sys.stderr)
-            result["instagram"] = {
-                "feed": 0, "stories": 0,
-                "alcance": 0, "alcanceStories": 0,
-                "reacoes": 0, "comentarios": 0, "compartilhamentos": 0,
-            }
-
-    return result
-
-
-def run_conteudo(data, start_year, end_year, ig_user_id=None, skip_engagement=False):
-    """Atualiza data['conteudo'] com contagens reais de publicações e métricas de engajamento."""
-    conteudo = data.setdefault("conteudo", {})
-    today = date.today()
-
-    for year in range(start_year, end_year + 1):
-        for q in range(1, 5):
-            since, until, last_day_str = quarter_range(year, q)
-            if date.fromisoformat(since) > today:
-                break  # trimestre no futuro
-
-            print(f"\n  {q}º tri {year}  ({since} → {last_day_str}):")
-            counts = fetch_quarter_counts(year, q, ig_user_id, skip_engagement=skip_engagement)
-
-            str_year = str(year)
-            conteudo.setdefault(str_year, {})
-
-            for plat, vals in counts.items():
-                plat_list = conteudo[str_year].setdefault(plat, [None, None, None, None])
-                while len(plat_list) < 4:
-                    plat_list.append(None)
-
-                existing = plat_list[q - 1]
-                if existing is None:
-                    plat_list[q - 1] = {
-                        "t":                 TRI_LABELS[q],
-                        "feed":              vals.get("feed", 0),
-                        "stories":           vals.get("stories", 0),
-                        "alcance":           vals.get("alcance", 0),
-                        "alcanceStories":    vals.get("alcanceStories", 0),
-                        "reacoes":           vals.get("reacoes", 0),
-                        "comentarios":       vals.get("comentarios", 0),
-                        "compartilhamentos": vals.get("compartilhamentos", 0),
-                    }
-                else:
-                    existing["feed"]    = vals.get("feed",    existing.get("feed", 0))
-                    existing["stories"] = vals.get("stories", existing.get("stories", 0))
-                    # Atualiza engajamento se a API retornou valores > 0
-                    # (preserva dados inseridos manualmente se a API falhar/retornar 0)
-                    for key in ("alcance", "reacoes", "comentarios", "compartilhamentos"):
-                        api_val = vals.get(key, 0)
-                        if api_val > 0:
-                            existing[key] = api_val
-                    # alcanceStories nunca vem da API (stories expiram); não sobrescreve
-
-
-
-# ───────────────────────── MODO SERIES ─────────────────────────
-
-FB_INSIGHT_METRICS = {
+FB_METRICS = {
     "visualizadores": "page_total_media_view_unique",
     "visualizacoes":  "page_media_view",
     "interacoes":     "page_post_engagements",
     "cliques":        "page_total_actions",
     "seguidores":     "page_daily_follows_unique",
     "visitas":        "page_views_total",
+}
+
+FB_METRICS_FALLBACK = {
+    "page_total_media_view_unique": "page_impressions_unique",
+    "page_media_view":              "page_impressions",
 }
 
 IG_DIRECT_METRICS = {
@@ -400,199 +76,468 @@ IG_DIRECT_METRICS = {
     "seguidores":    "follower_count",
 }
 
+IG_ENGAGEMENT_METRICS = ["accounts_engaged"]
 
-def fetch_day_fb(day):
-    since = day
-    until = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
-    result = {}
 
-    for json_key, metric_name in FB_INSIGHT_METRICS.items():
+# =============================================================================
+# Utilitários
+# =============================================================================
+
+def utc_to_brt_date(utc_str: str) -> str:
+    """Converte timestamp UTC da API para data no horário de Brasília (UTC-3)."""
+    if not utc_str:
+        return ""
+    try:
+        normalized = utc_str.replace("+0000", "+00:00").replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        return dt.astimezone(BRT).date().isoformat()
+    except Exception:
+        return utc_str[:10]
+
+
+def api_get(url, params, retries=3):
+    """GET com retry para rate limit e erros temporários."""
+    for attempt in range(retries):
         try:
-            data = api_get(
-                f"{BASE_URL}/{PAGE_ID}/insights/{metric_name}/day",
-                params={"since": since, "until": until, "access_token": TOKEN},
-            )
-            values = (data.get("data") or [{}])[0].get("values", [])
-            value = 0
-            for entry in values:
-                if entry.get("end_time", "")[:10] == day:
-                    value = entry["value"]
-                    break
-            else:
-                value = values[-1]["value"] if values else 0
-            result[json_key] = value
-        except Exception as e:
-            print(f"    Aviso FB {json_key}: {e}", file=sys.stderr)
+            r = requests.get(url, params=params, timeout=45)
+            if r.status_code == 429 or r.status_code >= 500:
+                wait = 10 * (attempt + 1)
+                print(f"  Rate limit / erro {r.status_code}, aguardando {wait}s...",
+                      file=sys.stderr)
+                time.sleep(wait)
+                continue
+            if not r.ok:
+                try:
+                    err = r.json()
+                    print(f"  Erro Meta API {r.status_code}: {err}", file=sys.stderr)
+                except Exception:
+                    print(f"  Erro Meta API {r.status_code}: {r.text[:400]}", file=sys.stderr)
+            r.raise_for_status()
+            data = r.json()
+            if "error" in data:
+                raise RuntimeError(f"API error: {data['error']}")
+            return data
+        except (requests.ConnectionError, requests.Timeout):
+            if attempt < retries - 1:
+                time.sleep(5)
+                continue
+            raise
+    raise RuntimeError(f"Falha após {retries} tentativas")
 
-    # Publicações
-    try:
-        result["publicacoes"] = count_paged(
-            f"{BASE_URL}/{PAGE_ID}/published_posts",
-            {"since": since, "until": until, "access_token": TOKEN, "fields": "id"},
-        )
-    except Exception as e:
-        print(f"    Aviso FB publicacoes: {e}", file=sys.stderr)
-        result["publicacoes"] = 0
 
-    # Stories
-    try:
-        result["stories"] = count_paged(
-            f"{BASE_URL}/{PAGE_ID}/stories",
-            {"since": since, "until": until, "access_token": TOKEN, "fields": "id"},
-        )
-    except Exception as e:
-        print(f"    Aviso FB stories: {e}", file=sys.stderr)
-        result["stories"] = 0
+def generate_months(year: int):
+    """Gera pares (since, until) para cada mês do ano, em datas ISO."""
+    for month in range(1, 13):
+        last_day = calendar.monthrange(year, month)[1]
+        since  = date(year, month, 1).isoformat()
+        # until é o primeiro dia do mês SEGUINTE (a API usa [since, until))
+        if month < 12:
+            until_ = date(year, month + 1, 1).isoformat()
+        else:
+            until_ = date(year + 1, 1, 1).isoformat()
+        yield since, until_, month, last_day
+
+
+def quarter_of(day_str: str) -> int:
+    return (int(day_str[5:7]) - 1) // 3 + 1
+
+
+# =============================================================================
+# Facebook
+# =============================================================================
+
+def get_ig_user_id() -> str:
+    data = api_get(
+        f"{BASE_URL}/{PAGE_ID}",
+        params={"fields": "instagram_business_account", "access_token": TOKEN},
+    )
+    ig = data.get("instagram_business_account")
+    if not ig:
+        raise RuntimeError("Página sem conta Instagram Business vinculada.")
+    return ig["id"]
+
+
+def fetch_fb_insights_month(since: str, until_: str) -> dict:
+    """
+    Coleta métricas diárias do Facebook para o mês [since, until_).
+    Retorna dict: {json_key: {date_brt: value}}.
+    """
+    result = {k: {} for k in FB_METRICS}
+
+    for json_key, metric_name in FB_METRICS.items():
+        fetched = False
+        for name in [metric_name, FB_METRICS_FALLBACK.get(metric_name)]:
+            if name is None:
+                continue
+            try:
+                data = api_get(
+                    f"{BASE_URL}/{PAGE_ID}/insights/{name}/day",
+                    params={"since": since, "until": until_, "access_token": TOKEN},
+                )
+                # A resposta pode ter paginação; precisamos de todos os dias do mês
+                while data:
+                    for entry in data.get("data", []):
+                        for val in entry.get("values", []):
+                            day = utc_to_brt_date(val.get("end_time", ""))
+                            if day and day >= since and day < until_:
+                                result[json_key][day] = val.get("value", 0)
+                    next_url = data.get("paging", {}).get("next")
+                    if not next_url:
+                        break
+                    data = api_get(next_url, {})
+                fetched = True
+                if name != metric_name:
+                    print(f"    FB {json_key}: usando '{name}' (fallback de '{metric_name}')",
+                          file=sys.stderr)
+                break
+            except Exception as e:
+                print(f"    AVISO FB {json_key} ({name}): {e}", file=sys.stderr)
+
+        if not fetched:
+            print(f"    AVISO FB {json_key}: todas as tentativas falharam para {since}",
+                  file=sys.stderr)
+        time.sleep(0.3)
 
     return result
 
 
-def fetch_day_ig(ig_user_id, day):
-    since = day
-    until = (date.fromisoformat(day) + timedelta(days=1)).isoformat()
-    result = {}
+def count_fb_publications_month(since: str, until_: str) -> tuple[dict, dict]:
+    """
+    Conta posts e stories do Facebook publicados por dia no mês.
+    Retorna (publicacoes_por_dia, stories_por_dia).
+    """
+    pub_by_day = {}
+    sto_by_day = {}
 
+    # Posts do feed
+    url = f"{BASE_URL}/{PAGE_ID}/published_posts"
+    params = {
+        "fields": "id,created_time",
+        "since": since,
+        "until": until_,
+        "access_token": TOKEN,
+        "limit": 100,
+    }
+    while url:
+        data = api_get(url, params)
+        for item in data.get("data", []):
+            day = utc_to_brt_date(item.get("created_time", ""))
+            if day:
+                pub_by_day[day] = pub_by_day.get(day, 0) + 1
+        url    = data.get("paging", {}).get("next")
+        params = {}
+        time.sleep(0.2)
+
+    # Stories
+    url = f"{BASE_URL}/{PAGE_ID}/stories"
+    params = {
+        "fields": "id,created_time",
+        "since": since,
+        "until": until_,
+        "access_token": TOKEN,
+        "limit": 100,
+    }
+    while url:
+        try:
+            data = api_get(url, params)
+            for item in data.get("data", []):
+                day = utc_to_brt_date(item.get("created_time", ""))
+                if day:
+                    sto_by_day[day] = sto_by_day.get(day, 0) + 1
+            url    = data.get("paging", {}).get("next")
+            params = {}
+            time.sleep(0.2)
+        except Exception as e:
+            print(f"    AVISO FB stories: {e}", file=sys.stderr)
+            break
+
+    return pub_by_day, sto_by_day
+
+
+# =============================================================================
+# Instagram
+# =============================================================================
+
+def fetch_ig_insights_month(ig_user_id: str, since: str, until_: str) -> dict:
+    """
+    Coleta métricas diárias do Instagram para o mês [since, until_).
+    Retorna dict: {json_key: {date_brt: value}}.
+    """
+    result = {k: {} for k in IG_DIRECT_METRICS}
+    result["interacoes"] = {}
+
+    # Métricas diretas (impressões, alcance, visitas, cliques, seguidores)
     try:
         data = api_get(
             f"{BASE_URL}/{ig_user_id}/insights",
             params={
-                "metric":  ",".join(IG_DIRECT_METRICS.values()),
-                "period":  "day",
-                "since":   since,
-                "until":   until,
+                "metric": ",".join(IG_DIRECT_METRICS.values()),
+                "period": "day",
+                "since":  since,
+                "until":  until_,
                 "access_token": TOKEN,
             },
         )
-        for entry in data.get("data", []):
-            json_key = next((k for k, v in IG_DIRECT_METRICS.items() if v == entry["name"]), None)
-            if json_key:
-                values = entry.get("values", [])
-                value = 0
-                for v in values:
-                    if v.get("end_time", "")[:10] == day:
-                        value = v["value"]
-                        break
-                else:
-                    value = values[-1]["value"] if values else 0
-                result[json_key] = value
+        while data:
+            for entry in data.get("data", []):
+                json_key = next(
+                    (k for k, v in IG_DIRECT_METRICS.items() if v == entry["name"]), None
+                )
+                if json_key:
+                    for val in entry.get("values", []):
+                        day = utc_to_brt_date(val.get("end_time", ""))
+                        if day and day >= since and day < until_:
+                            result[json_key][day] = val.get("value", 0)
+            next_url = data.get("paging", {}).get("next")
+            if not next_url:
+                break
+            data = api_get(next_url, {})
     except Exception as e:
-        print(f"    Aviso IG insights: {e}", file=sys.stderr)
+        print(f"    AVISO IG métricas diretas {since}: {e}", file=sys.stderr)
+    time.sleep(0.3)
 
-    try:
-        media = api_get(
-            f"{BASE_URL}/{ig_user_id}/media",
-            params={"fields": "media_type,timestamp", "since": since, "until": until, "access_token": TOKEN},
-        )
-        feed_count = stories_count = 0
-        for item in media.get("data", []):
-            if item.get("media_type") == "STORY":
-                stories_count += 1
-            else:
-                feed_count += 1
-        result["publicacoes"] = feed_count
-        result["stories"]     = stories_count
-    except Exception as e:
-        print(f"    Aviso IG media: {e}", file=sys.stderr)
-        result.setdefault("publicacoes", 0)
-        result.setdefault("stories", 0)
+    # Interações com conteúdo (accounts_engaged)
+    for metric_name in [*IG_ENGAGEMENT_METRICS, "total_interactions"]:
+        try:
+            data = api_get(
+                f"{BASE_URL}/{ig_user_id}/insights",
+                params={
+                    "metric": metric_name,
+                    "period": "day",
+                    "since":  since,
+                    "until":  until_,
+                    "access_token": TOKEN,
+                },
+            )
+            while data:
+                for entry in data.get("data", []):
+                    for val in entry.get("values", []):
+                        day = utc_to_brt_date(val.get("end_time", ""))
+                        if day and day >= since and day < until_:
+                            result["interacoes"][day] = val.get("value", 0)
+                next_url = data.get("paging", {}).get("next")
+                if not next_url:
+                    break
+                data = api_get(next_url, {})
+            break  # usou este metric_name com sucesso
+        except Exception as e:
+            print(f"    AVISO IG interacoes ({metric_name}): {e}", file=sys.stderr)
+    time.sleep(0.3)
 
     return result
 
 
-def run_series(data, start_date, end_date, ig_user_id=None, only_pub_stories=False):
-    """Preenche dados diários em data['series']."""
-    cur = date.fromisoformat(start_date)
-    end = date.fromisoformat(end_date)
-    today = date.today()
-    if end >= today:
-        end = today - timedelta(days=1)
+def count_ig_publications_month(ig_user_id: str, since: str, until_: str) -> tuple[dict, dict]:
+    """
+    Conta posts (feed + reels) e stories do Instagram por dia no mês.
+    Retorna (publicacoes_por_dia, stories_por_dia).
+    """
+    pub_by_day = {}
+    sto_by_day = {}
 
-    while cur <= end:
-        day = cur.isoformat()
-        print(f"\n  {day}")
-
-        fb = fetch_day_fb(day)
-        for key, value in fb.items():
-            if only_pub_stories and key not in ("publicacoes", "stories"):
-                cur += timedelta(days=1)
+    url = f"{BASE_URL}/{ig_user_id}/media"
+    params = {
+        "fields": "id,timestamp,media_type",
+        "since": since,
+        "until": until_,
+        "access_token": TOKEN,
+        "limit": 100,
+    }
+    while url:
+        data = api_get(url, params)
+        for item in data.get("data", []):
+            day = utc_to_brt_date(item.get("timestamp", ""))
+            if not day:
                 continue
-            data["series"]["facebook"].setdefault(key, {})[day] = value
+            if item.get("media_type") == "STORY":
+                sto_by_day[day] = sto_by_day.get(day, 0) + 1
+            else:
+                # IMAGE, VIDEO, REEL, CAROUSEL_ALBUM — todos contam como feed
+                pub_by_day[day] = pub_by_day.get(day, 0) + 1
+        url    = data.get("paging", {}).get("next")
+        params = {}
+        time.sleep(0.2)
 
-        if ig_user_id:
-            ig = fetch_day_ig(ig_user_id, day)
-            for key, value in ig.items():
-                if only_pub_stories and key not in ("publicacoes", "stories"):
-                    continue
-                data["series"]["instagram"].setdefault(key, {})[day] = value
-
-        cur += timedelta(days=1)
+    return pub_by_day, sto_by_day
 
 
-# ───────────────────────── MAIN ─────────────────────────────────
+# =============================================================================
+# JSON — atualização e recálculo trimestral
+# =============================================================================
+
+def merge_series(existing: dict, new_data: dict) -> int:
+    """
+    Mescla new_data (dict de {data: valor}) em existing.
+    Retorna a quantidade de datas gravadas.
+    """
+    count = 0
+    for day, value in new_data.items():
+        existing[day] = value
+        count += 1
+    return count
+
+
+def recalcular_conteudo(data: dict, year_str: str):
+    """
+    Recalcula os resumos trimestrais de feed/stories para o ano.
+    Preserva campos manuais (alcance, reações etc.) já preenchidos.
+    """
+    conteudo = data.setdefault("conteudo", {})
+    conteudo.setdefault(year_str, {})
+
+    for plat in ("facebook", "instagram"):
+        series_plat = data["series"].get(plat, {})
+        pub_series  = series_plat.get("publicacoes") or {}
+        str_series  = series_plat.get("stories")     or {}
+
+        for q in range(1, 5):
+            feed_total    = sum(v for d, v in pub_series.items()
+                                if d[:4] == year_str and quarter_of(d) == q)
+            stories_total = sum(v for d, v in str_series.items()
+                                if d[:4] == year_str and quarter_of(d) == q)
+
+            if feed_total == 0 and stories_total == 0:
+                continue
+
+            plat_list = conteudo[year_str].setdefault(plat, [None, None, None, None])
+            while len(plat_list) < 4:
+                plat_list.append(None)
+
+            existing = plat_list[q - 1]
+            if existing is None:
+                plat_list[q - 1] = {
+                    "t":                 TRI_LABELS[q],
+                    "feed":              feed_total,
+                    "stories":           stories_total,
+                    "alcance":           0,
+                    "alcanceStories":    0,
+                    "reacoes":           0,
+                    "comentarios":       0,
+                    "compartilhamentos": 0,
+                }
+            else:
+                existing["feed"]    = feed_total
+                existing["stories"] = stories_total
+
+
+# =============================================================================
+# Main
+# =============================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Backfill de métricas históricas")
-    parser.add_argument("--mode", choices=["conteudo", "series", "ambos"],
-                        default="conteudo",
-                        help="conteudo=resumo trimestral (rápido) | series=séries diárias | ambos=os dois")
-
-    # Parâmetros para modo conteudo / ambos
-    parser.add_argument("--start-year", type=int, default=date.today().year - 1,
-                        help="Ano inicial para modo conteudo (padrão: ano passado)")
-    parser.add_argument("--end-year",   type=int, default=date.today().year,
-                        help="Ano final para modo conteudo (padrão: ano corrente)")
-
-    # Parâmetros para modo series / ambos
-    parser.add_argument("--start", help="Data inicial para modo series (YYYY-MM-DD)")
-    parser.add_argument("--end",   help="Data final para modo series (YYYY-MM-DD)")
-    parser.add_argument("--only-pub-stories", action="store_true",
-                        help="No modo series, preencher só publicacoes e stories (mais rápido)")
-
+    parser = argparse.ArgumentParser(
+        description="Backfill de métricas diárias de conta para um ano completo."
+    )
+    parser.add_argument("--year", type=int, default=2025,
+                        help="Ano a backfillar (padrão: 2025)")
+    parser.add_argument("--skip-facebook", action="store_true",
+                        help="Pula coleta do Facebook")
     parser.add_argument("--skip-instagram", action="store_true",
-                        help="Pular dados do Instagram")
-    parser.add_argument("--skip-engagement", action="store_true",
-                        help="No modo conteudo, pular busca de engajamento (mais rápido, só conta posts)")
+                        help="Pula coleta do Instagram")
     parser.add_argument("--dry-run", action="store_true",
-                        help="Mostrar o que seria feito sem salvar o arquivo")
-
+                        help="Exibe o que seria coletado sem gravar no JSON")
     args = parser.parse_args()
 
-    path = "dados/metricas.json"
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    year     = args.year
+    year_str = str(year)
 
-    # Obter ID do Instagram
+    print(f"Backfill de métricas — ano {year}")
+    print(f"  Facebook : {'IGNORADO' if args.skip_facebook  else 'SIM'}")
+    print(f"  Instagram: {'IGNORADO' if args.skip_instagram else 'SIM'}")
+    if args.dry_run:
+        print("  MODO DRY-RUN: nada será salvo.\n")
+
+    # Carrega JSON existente
+    try:
+        with open(METRICS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        print(f"Arquivo {METRICS_PATH} não encontrado. Iniciando estrutura vazia.")
+        data = {"atualizado": "", "series": {"facebook": {}, "instagram": {}}, "conteudo": {}}
+
+    data.setdefault("series", {})
+    data["series"].setdefault("facebook", {})
+    data["series"].setdefault("instagram", {})
+
     ig_user_id = None
     if not args.skip_instagram:
-        try:
-            ig_user_id = get_ig_user_id()
-            print(f"Instagram Business Account: {ig_user_id}")
-        except Exception as e:
-            print(f"Aviso: Instagram não disponível – {e}", file=sys.stderr)
-            print("  (use --skip-instagram para suprimir este aviso)")
+        print("\nBuscando ID da conta Instagram...")
+        ig_user_id = get_ig_user_id()
+        print(f"  IG User ID: {ig_user_id}")
 
-    # Executar modos
-    if args.mode in ("conteudo", "ambos"):
-        print(f"\n=== MODO CONTEUDO ({args.start_year} → {args.end_year}) ===")
-        run_conteudo(data, args.start_year, args.end_year, ig_user_id,
-                     skip_engagement=args.skip_engagement)
+    total_dias = {"facebook": 0, "instagram": 0}
 
-    if args.mode in ("series", "ambos"):
-        if not args.start or not args.end:
-            parser.error("--start e --end são obrigatórios para modo series/ambos")
-        print(f"\n=== MODO SERIES ({args.start} → {args.end}) ===")
-        run_series(data, args.start, args.end, ig_user_id, args.only_pub_stories)
+    for since, until_, month, _ in generate_months(year):
+        print(f"\n--- {year}-{month:02d} ({since} → {until_}) ---")
 
-    # Salvar
+        # ===== FACEBOOK =====
+        if not args.skip_facebook:
+            print("  Facebook — métricas de conta...")
+            fb_insights = fetch_fb_insights_month(since, until_)
+
+            print("  Facebook — contagem de publicações...")
+            fb_pub, fb_sto = count_fb_publications_month(since, until_)
+
+            if not args.dry_run:
+                fb_series = data["series"]["facebook"]
+                for json_key, day_values in fb_insights.items():
+                    fb_series.setdefault(json_key, {})
+                    n = merge_series(fb_series[json_key], day_values)
+                    total_dias["facebook"] += n
+
+                fb_series.setdefault("publicacoes", {})
+                n = merge_series(fb_series["publicacoes"], fb_pub)
+                total_dias["facebook"] += n
+
+                fb_series.setdefault("stories", {})
+                merge_series(fb_series["stories"], fb_sto)
+
+            # Relatório do mês
+            fb_reach_days = sum(1 for _ in fb_insights.get("alcance", {}) or
+                                fb_insights.get("visualizadores", {}))
+            fb_posts_sum  = sum(fb_pub.values())
+            fb_sto_sum    = sum(fb_sto.values())
+            print(f"    dias com métricas: {len(next(iter(fb_insights.values()), {}))}")
+            print(f"    posts: {fb_posts_sum}  |  stories: {fb_sto_sum}")
+
+        # ===== INSTAGRAM =====
+        if not args.skip_instagram and ig_user_id:
+            print("  Instagram — métricas de conta...")
+            ig_insights = fetch_ig_insights_month(ig_user_id, since, until_)
+
+            print("  Instagram — contagem de publicações...")
+            ig_pub, ig_sto = count_ig_publications_month(ig_user_id, since, until_)
+
+            if not args.dry_run:
+                ig_series = data["series"]["instagram"]
+                for json_key, day_values in ig_insights.items():
+                    ig_series.setdefault(json_key, {})
+                    n = merge_series(ig_series[json_key], day_values)
+                    total_dias["instagram"] += n
+
+                ig_series.setdefault("publicacoes", {})
+                merge_series(ig_series["publicacoes"], ig_pub)
+
+                ig_series.setdefault("stories", {})
+                merge_series(ig_series["stories"], ig_sto)
+
+            ig_posts_sum = sum(ig_pub.values())
+            ig_sto_sum   = sum(ig_sto.values())
+            print(f"    dias com métricas: {len(next(iter(ig_insights.values()), {}))}")
+            print(f"    posts: {ig_posts_sum}  |  stories: {ig_sto_sum}")
+
+    # ===== RECALCULA TRIMESTRES E SALVA =====
     if not args.dry_run:
-        with open(path, "w", encoding="utf-8") as f:
+        print(f"\nRecalculando resumos trimestrais de {year_str}...")
+        recalcular_conteudo(data, year_str)
+
+        with open(METRICS_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
-        print(f"\nmetricas.json atualizado!")
+
+        print(f"\nmetricas.json atualizado.")
+        print(f"  Dias gravados — FB: {total_dias['facebook']}  |  IG: {total_dias['instagram']}")
     else:
-        print("\n[dry-run] Arquivo NÃO salvo.")
-        # Mostra o que ficaria no conteudo
-        print("\nConteudo resultante:")
-        print(json.dumps(data.get("conteudo", {}), ensure_ascii=False, indent=2))
+        print("\nDry-run concluído — nenhuma alteração gravada.")
 
 
 if __name__ == "__main__":
