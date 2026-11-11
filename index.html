@@ -256,7 +256,7 @@ var METR={
 };
 var ORDEM=['visualizacoes','alcance','visualizadores','interacoes','cliques','visitas','seguidores','publicacoes','stories','visualizacoesStories'];
 var MESES=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
-var DATA=null, local=false, LOGO=(document.querySelector('.brand img')||{}).src||'';
+var DATA=null, POSTS=null, local=false, LOGO=(document.querySelector('.brand img')||{}).src||'';
 var st={view:'painel',plat:'facebook',met:'visualizacoes',ini:null,fim:null,preset:'ano',bucket:'dia',bucketAuto:true,cap:true,year:null,quarter:null,qmet:'visualizacoes'};
 
 /* =================== UTILIDADES =================== */
@@ -292,10 +292,17 @@ function erroCarga(e){
   $('app').innerHTML='<div class="panel"><div class="empty"><b>Não foi possível carregar os dados</b>O arquivo dados/metricas.json não respondeu. Se esta página foi aberta direto do computador, publique-a no servidor: o navegador bloqueia a leitura de arquivos locais.<br><br>Detalhe técnico: '+esc(e&&e.message?e.message:e)+'</div></div>';
 }
 function loadData(cb){
-  fetch('dados/metricas.json',{cache:'no-cache'})
-    .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
-    .then(function(d){BASE=d;reconstruir();cb()})
-    .catch(erroCarga);
+  Promise.all([
+    fetch('dados/metricas.json',{cache:'no-cache'})
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}),
+    fetch('dados/posts.json',{cache:'no-cache'})
+      .then(function(r){return r.ok?r.json():null})
+      .catch(function(){return null})
+  ]).then(function(results){
+    BASE=results[0];reconstruir();
+    POSTS=results[1]||{atualizado:'',facebook:[],instagram:[]};
+    cb();
+  }).catch(erroCarga);
 }
 function merge(a,b){
   Object.keys(b.series||{}).forEach(function(p){
@@ -990,6 +997,34 @@ function autoAnalise(p,Y,q,mets,cur,pq,py){
   if(!linhas.length)return '';
   return linhas.join(' ')+'\n\n[Revise e complemente este texto antes de gerar o PDF.]';
 }
+function topPostsHTML(p,qa,qb){
+  /* Retorna HTML da tabela "Top publicações" para o período qa..qb usando POSTS global.
+     Retorna '' se POSTS não disponível ou sem posts no período. */
+  if(!POSTS||!POSTS[p]||!POSTS[p].length)return '';
+  var list=POSTS[p].filter(function(po){return po.data>=qa&&po.data<=qb});
+  if(!list.length)return '';
+  var isFB=p==='facebook';
+  /* Ordena por visualizações desc */
+  list=list.slice().sort(function(a,b){return (b.vis||0)-(a.vis||0)});
+  var top=list.slice(0,5);
+  var rows=top.map(function(po){
+    var txt=po.txt?esc(po.txt.slice(0,80))+(po.txt.length>80?'…':''):'<em style="color:var(--muted)">(sem texto)</em>';
+    var link=po.url?'<a href="'+esc(po.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-underline-offset:3px">'+br(po.data)+'</a>':br(po.data);
+    var engCol=isFB
+      ?'<td>'+fmt(po.reac||0)+'</td><td>'+fmt(po.com||0)+'</td><td>'+fmt(po.comp||0)+'</td>'
+      :'<td>'+fmt(po.curt||0)+'</td><td>'+fmt(po.com||0)+'</td><td>'+fmt(po.salv||0)+'</td>';
+    return '<tr><td>'+link+'</td><td style="max-width:260px;white-space:normal">'+txt+'</td><td><b>'+fmt(po.vis||0)+'</b></td><td>'+fmt(po.alc||0)+'</td>'+engCol+'</tr>';
+  }).join('');
+  var engHead=isFB
+    ?'<th>Reações</th><th>Coment.</th><th>Compart.</th>'
+    :'<th>Curtidas</th><th>Coment.</th><th>Salvamentos</th>';
+  /* Contagem por API vs campo manual */
+  var apiCount=list.length;
+  var cntNote='Total de publicações no trimestre (pela API): <b>'+apiCount+'</b>.';
+  return '<h3>Top publicações (por visualizações)</h3>'+
+    '<div class="tw"><table><thead><tr><th>Data</th><th>Publicação</th><th>Visualizações</th><th>Alcance</th>'+engHead+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<p class="nt">'+cntNote+' Clique na data para abrir o post na rede social. Dados por post via Meta Graph API.</p>';
+}
 function relPlat(p,Y,q,primeira){
   var old=st.plat;st.plat=p;
   var COR_PLAT=p==='facebook'?'var(--fb)':'var(--ig)';
@@ -1049,7 +1084,7 @@ function relPlat(p,Y,q,primeira){
     '<div class="tw"><table><thead><tr><th>Métrica</th><th>'+q+'º tri '+Y+'</th><th>'+(q===1?'4º tri '+(Y-1):(q-1)+'º tri '+Y)+'</th><th>Variação</th><th>'+q+'º tri '+(Y-1)+'</th><th>Variação</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
     '<p class="nt">'+(cur.full?'':'Trimestre parcial, com dados até '+br(cur.b)+'. ')+notas.join(' ')+'</p>'+
     '<h3>Evolução mensal (barra clara: mesmo mês de '+(Y-1)+')</h3><div class="mini">'+mini+'</div>'+
-    '<h3>'+esc(vm.n)+' por dia</h3>'+daily+topT+cont+
+    '<h3>'+esc(vm.n)+' por dia</h3>'+daily+topT+topPostsHTML(p,cur.a,cur.b)+cont+
     '<h3>Análise</h3><p class="nt noprint" style="margin-bottom:4px">Texto pré-gerado automaticamente — edite antes de gerar o PDF.</p><div class="ed" contenteditable="true" role="textbox" aria-multiline="true" data-f="an-'+p+'" data-ph="Clique aqui para escrever a análise do '+NOMES[p]+' neste trimestre.">'+anContent+'</div></div>';
   st.plat=old;return html;
 }
