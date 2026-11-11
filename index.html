@@ -997,33 +997,45 @@ function autoAnalise(p,Y,q,mets,cur,pq,py){
   if(!linhas.length)return '';
   return linhas.join(' ')+'\n\n[Revise e complemente este texto antes de gerar o PDF.]';
 }
+function tipoLabel(tipo,isFB){
+  /* Mapeia media_type/type para rótulo legível. Reels são exibidos como "Reel"
+     mas CONTAM como Feed nos totais (regra de negócio confirmada). */
+  if(isFB){var m={link:'Link',photo:'Foto',video:'Vídeo',status:'Texto',share:'Compart.',event:'Evento'};return m[tipo]||tipo||'—';}
+  var m={IMAGE:'Imagem',VIDEO:'Vídeo',REEL:'Reel',CAROUSEL_ALBUM:'Carrossel'};return m[tipo]||tipo||'—';
+}
 function topPostsHTML(p,qa,qb){
   /* Retorna HTML da tabela "Top publicações" para o período qa..qb usando POSTS global.
+     Reels do Instagram contam como Feed (regra de negócio).
      Retorna '' se POSTS não disponível ou sem posts no período. */
   if(!POSTS||!POSTS[p]||!POSTS[p].length)return '';
   var list=POSTS[p].filter(function(po){return po.data>=qa&&po.data<=qb});
   if(!list.length)return '';
   var isFB=p==='facebook';
   /* Ordena por visualizações desc */
-  list=list.slice().sort(function(a,b){return (b.vis||0)-(a.vis||0)});
-  var top=list.slice(0,5);
+  var sorted=list.slice().sort(function(a,b){return (b.vis||0)-(a.vis||0)});
+  var top=sorted.slice(0,10);
   var rows=top.map(function(po){
-    var txt=po.txt?esc(po.txt.slice(0,80))+(po.txt.length>80?'…':''):'<em style="color:var(--muted)">(sem texto)</em>';
+    var txt=po.txt?esc(po.txt.slice(0,70))+(po.txt.length>70?'…':''):'<em style="color:var(--muted)">(sem texto)</em>';
     var link=po.url?'<a href="'+esc(po.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline;text-underline-offset:3px">'+br(po.data)+'</a>':br(po.data);
+    var tipoStr=tipoLabel(po.tipo,isFB);
     var engCol=isFB
       ?'<td>'+fmt(po.reac||0)+'</td><td>'+fmt(po.com||0)+'</td><td>'+fmt(po.comp||0)+'</td>'
       :'<td>'+fmt(po.curt||0)+'</td><td>'+fmt(po.com||0)+'</td><td>'+fmt(po.salv||0)+'</td>';
-    return '<tr><td>'+link+'</td><td style="max-width:260px;white-space:normal">'+txt+'</td><td><b>'+fmt(po.vis||0)+'</b></td><td>'+fmt(po.alc||0)+'</td>'+engCol+'</tr>';
+    return '<tr><td>'+link+'</td><td>'+esc(tipoStr)+'</td><td style="max-width:220px;white-space:normal">'+txt+'</td><td><b>'+fmt(po.vis||0)+'</b></td><td>'+fmt(po.alc||0)+'</td>'+engCol+'</tr>';
   }).join('');
   var engHead=isFB
     ?'<th>Reações</th><th>Coment.</th><th>Compart.</th>'
     :'<th>Curtidas</th><th>Coment.</th><th>Salvamentos</th>';
-  /* Contagem por API vs campo manual */
+  /* Contagem e breakdown de tipo */
   var apiCount=list.length;
-  var cntNote='Total de publicações no trimestre (pela API): <b>'+apiCount+'</b>.';
+  var reelCount=!isFB?list.filter(function(po){return po.tipo==='REEL'}).length:0;
+  var cntNote='Total de publicações no trimestre (pela API): <b>'+apiCount+'</b>'
+    +(reelCount?' — inclui <b>'+reelCount+' Reel'+(reelCount>1?'s':'')+'</b>, contado'+(reelCount>1?'s':'')
+      +' como Feed':'')+ '.';
   return '<h3>Top publicações (por visualizações)</h3>'+
-    '<div class="tw"><table><thead><tr><th>Data</th><th>Publicação</th><th>Visualizações</th><th>Alcance</th>'+engHead+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+
-    '<p class="nt">'+cntNote+' Clique na data para abrir o post na rede social. Dados por post via Meta Graph API.</p>';
+    '<div class="tw"><table><thead><tr><th>Data</th><th>Tipo</th><th>Publicação</th><th>Visualizações</th><th>Alcance</th>'+engHead+'</tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<p class="nt">'+cntNote+(sorted.length>10?' Mostrando as 10 maiores. ':' ')
+    +'Clique na data para abrir o post. Dados via Meta Graph API.</p>';
 }
 function relPlat(p,Y,q,primeira){
   var old=st.plat;st.plat=p;
@@ -1071,7 +1083,18 @@ function relPlat(p,Y,q,primeira){
     cont+='<tr><td>'+yq[1]+'º tri de '+yq[0]+'</td><td>'+fmt(c.feed||0)+'</td><td>'+ni(c.stories)+'</td><td>'+ni(al)+'</td><td>'+ni(c.reacoes)+'</td><td>'+ni(c.comentarios)+'</td><td>'+ni(c.compartilhamentos)+'</td></tr>';
   });
   if(niCount>0)window._relNiCount=(window._relNiCount||0)+niCount;
-  if(cont)cont='<h3>Publicações e engajamento</h3><div class="tw"><table><thead><tr><th>Período</th><th>Feed</th><th>Stories</th><th>Alcance somado</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+cont+'</tbody></table></div><p class="nt">Dados do relatório trimestral da ASCOM (manual). O alcance somado é a soma do alcance de cada publicação e não é comparável ao alcance médio diário do quadro acima. Campos marcados como n/i não foram preenchidos no relatório de origem.</p>';
+  /* Enriquece nota com contagem de posts da API quando disponível */
+  var apiPostNote='';
+  if(POSTS&&POSTS[p]&&POSTS[p].length){
+    var apiList=POSTS[p].filter(function(po){return po.data>=cur.a&&po.data<=cur.b});
+    if(apiList.length){
+      var reelCnt=p==='instagram'?apiList.filter(function(po){return po.tipo==='REEL'}).length:0;
+      apiPostNote=' API: <b>'+apiList.length+' publicação'+(apiList.length>1?'ões':'')+'</b> coletadas'
+        +(reelCnt?' ('+reelCnt+' Reel'+(reelCnt>1?'s':'')+', contado'+(reelCnt>1?'s':'')+' como Feed)':'')
+        +'.';
+    }
+  }
+  if(cont)cont='<h3>Publicações e engajamento</h3><div class="tw"><table><thead><tr><th>Período</th><th>Feed</th><th>Stories</th><th>Alcance somado</th><th>Reações</th><th>Comentários</th><th>Compart.</th></tr></thead><tbody>'+cont+'</tbody></table></div><p class="nt">Dados do relatório trimestral da ASCOM (manual).'+apiPostNote+' O alcance somado é a soma do alcance de cada publicação e não é comparável ao alcance médio diário do quadro acima. Campos marcados como n/i não foram preenchidos no relatório de origem.</p>';
   var notas=[];
   if(p==='instagram'&&mets.indexOf('visualizacoes')>=0)notas.push('As visualizações exportadas pela conta do Instagram somam Instagram e Facebook (cerca de 1% do total vem do Facebook).');
   if(mets.some(function(m){return mi(m).t==='avg'}))notas.push('Alcance e visualizadores contam contas ou pessoas únicas por dia, por isso são apresentados como média diária.');
