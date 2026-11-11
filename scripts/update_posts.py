@@ -17,7 +17,7 @@ import json
 import sys
 import time
 import requests
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 API_VERSION = "v21.0"
 BASE_URL    = f"https://graph.facebook.com/{API_VERSION}"
@@ -29,9 +29,27 @@ TOKEN   = os.environ["FB_PAGE_ACCESS_TOKEN"]
 # crescimento de métricas após publicação.
 ROLLING_DAYS = 60
 
-today  = date.today()
+# Horário de Brasília (UTC-3).
+# A API retorna timestamps em UTC; converter para BRT garante que um post
+# publicado às 21h BRT (= 00h UTC do dia seguinte) seja atribuído ao dia
+# correto no relatório — especialmente importante nos limites de trimestre.
+BRT    = timezone(timedelta(hours=-3))
+today  = datetime.now(BRT).date()
 since  = (today - timedelta(days=ROLLING_DAYS)).isoformat()
 until_ = today.isoformat()
+
+
+def utc_to_brt_date(utc_str: str) -> str:
+    """Converte timestamp UTC da API ('2024-12-31T21:30:00+0000') para data BRT."""
+    if not utc_str:
+        return ""
+    try:
+        # A API retorna '+0000' (sem ':'), que fromisoformat não aceita antes do Py 3.11
+        normalized = utc_str.replace("+0000", "+00:00").replace("Z", "+00:00")
+        dt_utc = datetime.fromisoformat(normalized)
+        return dt_utc.astimezone(BRT).date().isoformat()
+    except Exception:
+        return utc_str[:10]  # fallback: usa os primeiros 10 chars (data UTC)
 
 POSTS_PATH = "dados/posts.json"
 
@@ -143,7 +161,7 @@ def fetch_fb_posts(since_date, until_date):
         print(f"  FB página {page_num}: {len(items)} posts...")
 
         for item in items:
-            post_date = item.get("created_time", "")[:10]
+            post_date = utc_to_brt_date(item.get("created_time", ""))
             insights  = fetch_fb_post_insights(item["id"])
 
             reac_raw   = insights.get("post_reactions_by_type_total", 0)
@@ -238,7 +256,7 @@ def fetch_ig_posts(ig_user_id, since_date, until_date):
             if item.get("media_type") == "STORY":
                 continue
 
-            post_date = item.get("timestamp", "")[:10]
+            post_date = utc_to_brt_date(item.get("timestamp", ""))
             insights  = fetch_ig_media_insights(item["id"])
 
             cap = item.get("caption", "")

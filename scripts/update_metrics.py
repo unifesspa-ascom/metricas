@@ -12,7 +12,7 @@ import os
 import json
 import sys
 import requests
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 API_VERSION = "v21.0"
 BASE_URL    = f"https://graph.facebook.com/{API_VERSION}"
@@ -20,35 +20,56 @@ BASE_URL    = f"https://graph.facebook.com/{API_VERSION}"
 PAGE_ID = os.environ.get("FB_PAGE_ID", "447748898661292")
 TOKEN   = os.environ["FB_PAGE_ACCESS_TOKEN"]
 
-yesterday = (date.today() - timedelta(days=1)).isoformat()
+# Horário de Brasília (UTC-3) — corrige atribuição de datas em posts noturnos
+# (ex: post às 21h BRT = 00h UTC do dia seguinte → seria contado no dia errado)
+BRT = timezone(timedelta(hours=-3))
+now_brt   = datetime.now(BRT)
+yesterday = (now_brt - timedelta(days=1)).date().isoformat()
 since     = yesterday
-until_    = date.today().isoformat()
+until_    = now_brt.date().isoformat()
 
 # --- Facebook Page Insights ---
+# NOTA: alguns nomes de métricas foram alterados na Graph API v18.0+.
+# O script tenta o nome principal; se falhar, registra aviso com o nome que falhou
+# para facilitar diagnóstico. Nomes alternativos conhecidos estão nos comentários.
 FB_METRICS = {
-    "visualizadores": "page_total_media_view_unique",  # viewers unicos (antigo: page_impressions_unique)
-    "visualizacoes":  "page_media_view",               # views totais  (antigo: page_impressions)
-    "interacoes":     "page_post_engagements",         # engajamentos  (antigo: page_engaged_users)
-    "cliques":        "page_total_actions",            # acoes totais  (antigo: page_consumptions)
-    "seguidores":     "page_daily_follows_unique",     # novos seguid. (antigo: page_fan_adds)
-    "visitas":        "page_views_total",              # visitas ao perfil (mantida)
+    # viewers únicos — se falhar, tentar page_impressions_unique
+    "visualizadores": "page_total_media_view_unique",
+    # visualizações totais — se falhar, tentar page_impressions
+    "visualizacoes":  "page_media_view",
+    # engajamentos — se falhar, tentar page_actions_post_reactions_total
+    "interacoes":     "page_post_engagements",
+    # ações totais no perfil
+    "cliques":        "page_total_actions",
+    # novos seguidores
+    "seguidores":     "page_daily_follows_unique",
+    # visitas ao perfil
+    "visitas":        "page_views_total",
+}
+
+# Nomes alternativos para métricas FB potencialmente depreciadas (v18.0+).
+# Se a métrica principal falhar, tenta o alternativo (quando disponível).
+FB_METRICS_FALLBACK = {
+    "page_total_media_view_unique": "page_impressions_unique",
+    "page_media_view":              "page_impressions",
 }
 
 # --- Instagram User Insights ---
-IG_CONTACT_METRICS = [
-    "email_contacts",
-    "get_directions_clicks",
-    "phone_call_clicks",
-    "text_message_clicks",
-]
-
 IG_DIRECT_METRICS = {
     "visualizacoes": "impressions",
-    "alcance":       "reach",
+    "alcance":       "reach",      # alcance diário da conta (único por dia, não soma por post)
     "visitas":       "profile_views",
     "cliques":       "website_clicks",
     "seguidores":    "follower_count",
 }
+
+# Métricas de engajamento com conteúdo (ponto 1 da análise ASCOM):
+# "accounts_engaged" = contas únicas que interagiram com qualquer conteúdo
+#   (curtidas + comentários + compartilhamentos + salvamentos)
+# Corresponde ao campo "Interações com o Conteúdo" do Meta Business Suite.
+# Anteriormente o script usava cliques de contato (email, telefone etc.),
+# que é uma métrica diferente e incorreta para este relatório.
+IG_ENGAGEMENT_METRICS = ["accounts_engaged"]
 
 
 def api_get(url, params):
@@ -90,12 +111,30 @@ def count_paged_results(url, params):
 def fetch_facebook_metrics():
     result = {}
     for json_key, metric_name in FB_METRICS.items():
-        data = api_get(
-            f"{BASE_URL}/{PAGE_ID}/insights/{metric_name}/day",
-            params={"since": since, "until": until_, "access_token": TOKEN},
-        )
-        result[json_key] = extract_day_value(data["data"][0], yesterday) if data.get("data") else 0
-        print(f"  FB {json_key}: {result[json_key]}")
+        value = None
+        # Tenta o nome principal; em caso de erro, tenta o alternativo (se houver)
+        for name in [metric_name, FB_METRICS_FALLBACK.get(metric_name)]:
+            if name is None:
+                continue
+            try:
+                data = api_get(
+                    f"{BASE_URL}/{PAGE_ID}/insights/{name}/day",
+                    params={"since": since, "until": until_, "access_token": TOKEN},
+                )
+                value = extract_day_value(data["data"][0], yesterday) if data.get("data") else 0
+                if name != metric_name:
+                    print(f"  AVISO FB {json_key}: '{metric_name}' falhou, usando '{name}'",
+                          file=sys.stderr)
+                break
+            except Exception as e:
+                print(f"  AVISO FB {json_key} ({name}): {e}", file=sys.stderr)
+
+        if value is None:
+            value = 0
+            print(f"  AVISO FB {json_key}: todas as tentativas falharam, usando 0",
+                  file=sys.stderr)
+        result[json_key] = value
+        print(f"  FB {json_key}: {value}")
 
     # Publicacoes no feed (posts publicados ontem)
     feed_count = count_paged_results(
@@ -155,14 +194,27 @@ def fetch_instagram_metrics():
             result[json_key] = value
             print(f"  IG {json_key}: {value}")
 
-    # Interacoes = soma de acoes de contato no perfil
+    # Interações com o conteúdo (ponto 1 da análise ASCOM):
+    # "accounts_engaged" = contas únicas que interagiram com qualquer conteúdo
+    # (curtidas + comentários + compartilhamentos + salvamentos + respostas).
+    # Corresponde ao campo "Interações" do Meta Business Suite.
+    # NOTA: se accounts_engaged não estiver disponível nesta conta/token,
+    # o script loga o aviso e usa 0. Verificar no log da Action e, se necessário,
+    # testar "total_interactions" como alternativa.
     try:
-        contact = fetch_ig_insights(ig_user_id, IG_CONTACT_METRICS)
-        result["interacoes"] = sum(extract_day_value(e, yesterday) for e in contact.get("data", []))
-        print(f"  IG interacoes: {result['interacoes']}")
+        eng = fetch_ig_insights(ig_user_id, IG_ENGAGEMENT_METRICS)
+        result["interacoes"] = sum(extract_day_value(e, yesterday) for e in eng.get("data", []))
+        print(f"  IG interacoes (accounts_engaged): {result['interacoes']}")
     except Exception as e:
-        print(f"  Aviso IG interacoes: {e}", file=sys.stderr)
-        result.setdefault("interacoes", 0)
+        print(f"  AVISO IG interacoes (accounts_engaged indisponivel): {e}", file=sys.stderr)
+        # Fallback: tenta total_interactions
+        try:
+            eng2 = fetch_ig_insights(ig_user_id, ["total_interactions"])
+            result["interacoes"] = sum(extract_day_value(e, yesterday) for e in eng2.get("data", []))
+            print(f"  IG interacoes (total_interactions fallback): {result['interacoes']}")
+        except Exception as e2:
+            print(f"  AVISO IG interacoes fallback falhou: {e2}", file=sys.stderr)
+            result.setdefault("interacoes", 0)
 
     # Contagem de publicacoes e stories via /media
     try:
