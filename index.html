@@ -190,6 +190,16 @@ footer{margin-top:24px;text-align:center;color:var(--muted);font-size:12.5px}
 .sheet .nt{font-size:11px;color:#555;margin:8px 0 0}
 .sheet .leg{font-size:11px;color:#555;margin:4px 0 0}
 @media(max-width:700px){.sheet{padding:18px 14px}.sheet .mini{grid-template-columns:repeat(2,1fr)}}
+/* ---- Peak day cards ---- */
+.peak-cards{display:flex;flex-direction:column;gap:7px;margin:10px 0}
+.peak-card{display:flex;align-items:center;gap:11px;padding:9px 13px;background:var(--bg);border-radius:10px;font-size:13px}
+.peak-rank{font-size:15px;font-weight:800;color:var(--accent);min-width:22px;text-align:center}
+.peak-info{flex:1;min-width:0}
+.peak-val{font-weight:700;font-variant-numeric:tabular-nums}
+.peak-meta{font-size:11.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ---- Clean report table (no vertical borders) ---- */
+.rel-tbl td,.rel-tbl th{border-left:0!important;border-right:0!important}
+.rel-tbl tr.destaque-atual td{font-weight:700}
 @media print{
   @page{size:A4;margin:0}
   body.rel{background:#fff}
@@ -624,7 +634,7 @@ function renderPainel(){
   var qs=availQs();
   var years=availYears();
   /* ---- Seletor de ano ---- */
-  var yearSel='<select class="qs-year" id="qs-year" aria-label="Ano">'+years.map(function(yr){return '<option value="'+yr+'"'+(yr===Y?' selected':'')+'>'+yr+'</option>'}).join('')+'</select>';
+  var yearSel=years.map(function(yr){return '<button class="pill'+(yr===Y?' on':'')+'" data-ysel="'+yr+'" aria-pressed="'+(yr===Y)+'" aria-label="Ano '+yr+'">'+yr+'</button>'}).join('');
   /* ---- Pills de trimestre ---- */
   var pills=[1,2,3,4].map(function(qi){
     var avail=qs.some(function(x){return x.y===Y&&x.q===qi});
@@ -710,7 +720,6 @@ function renderPainel(){
   }
   app.innerHTML=h;
   /* Pós-render */
-  var ysEl=$('qs-year');if(ysEl)ysEl.addEventListener('change',function(){st.year=+this.value;var qs2=availQs(),hasQ=qs2.some(function(x){return x.y===st.year&&x.q===st.quarter});if(!hasQ){var ay=qs2.filter(function(x){return x.y===st.year});st.quarter=ay.length?ay[ay.length-1].q:1}renderPainel()});
   var bkEl=$('bk');if(bkEl){bkEl.value=st.bucket;bkEl.addEventListener('change',function(){st.bucket=this.value;st.bucketAuto=false;if(plat!=='consolidado')drawChartExpl(plat,cur)});}
   var capEl=$('cap');if(capEl){capEl.checked=st.cap;capEl.addEventListener('change',function(){st.cap=this.checked;if(plat!=='consolidado')drawChartExpl(plat,cur)});}
   if(plat!=='consolidado'&&$('chart')){
@@ -1073,7 +1082,7 @@ function relPlat(p,Y,q,primeira){
   var vk=mets.indexOf('visualizacoes')>=0?'visualizacoes':mets[0],vm=mi(vk);
   var daily=dailyBars(rng(vk,cur.a,cur.b),COR[vk]||'#1d4ed8',720,115);
   var top=rng(vk,cur.a,cur.b).filter(function(x){return x.v>0}).sort(function(x,y){return y.v-x.v}).slice(0,3);
-  var topT=top.length?'<div class="tw"><table style="max-width:340px"><thead><tr><th>Dia de maior destaque</th><th>'+esc(vm.n)+'</th></tr></thead><tbody>'+top.map(function(x){return '<tr><td>'+br(x.d)+'</td><td>'+fmt(x.v)+'</td></tr>'}).join('')+'</tbody></table></div>':'';
+  var topT=top.length?'<h3>Dias de maior destaque</h3><div class="peak-cards">'+top.map(function(x,i){var postMatch=POSTS&&POSTS[p]?POSTS[p].find(function(po){return po.data===x.d}):null;var meta=postMatch?(postMatch.txt?postMatch.txt.slice(0,70)+(postMatch.txt.length>70?'…':''):(postMatch.tipo?'['+postMatch.tipo+']':'')):null;return '<div class="peak-card"><span class="peak-rank">#'+(i+1)+'</span><div class="peak-info"><span class="peak-val">'+br(x.d)+' — '+fmt(x.v)+' '+esc(vm.n)+'</span>'+(meta?'<div class="peak-meta">'+esc(meta)+'</div>':'')+'</div></div>';}).join('')+'</div>':'';
   var C=DATA.conteudo||{},cont='',niCount=0;
   [[Y,q],[Y-1,q]].forEach(function(yq){
     var c=C[yq[0]]&&C[yq[0]][p]&&C[yq[0]][p][yq[1]-1];if(!c)return;
@@ -1104,7 +1113,7 @@ function relPlat(p,Y,q,primeira){
   var savedAn=edGet('an-'+p);
   var anContent=savedAn?esc(savedAn):esc(autoAnText);
   var html='<div class="secao'+(primeira?'':' novapag')+'"><h2 style="border-bottom-color:'+COR_PLAT+'">'+NOMES[p]+'</h2>'+
-    '<div class="tw"><table><thead><tr><th>Métrica</th><th>'+q+'º tri '+Y+'</th><th>'+(q===1?'4º tri '+(Y-1):(q-1)+'º tri '+Y)+'</th><th>Variação</th><th>'+q+'º tri '+(Y-1)+'</th><th>Variação</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+    '<div class="tw"><table class="rel-tbl"><thead><tr><th>Métrica</th><th>'+q+'º tri '+Y+'</th><th>'+(q===1?'4º tri '+(Y-1):(q-1)+'º tri '+Y)+'</th><th>Variação</th><th>'+q+'º tri '+(Y-1)+'</th><th>Variação</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
     '<p class="nt">'+(cur.full?'':'Trimestre parcial, com dados até '+br(cur.b)+'. ')+notas.join(' ')+'</p>'+
     '<h3>Evolução mensal (barra clara: mesmo mês de '+(Y-1)+')</h3><div class="mini">'+mini+'</div>'+
     '<h3>'+esc(vm.n)+' por dia</h3>'+daily+topT+topPostsHTML(p,cur.a,cur.b)+cont+
@@ -1157,8 +1166,9 @@ function render(){
 
 /* =================== EVENTOS =================== */
 document.addEventListener('click',function(e){
-  var t=e.target.closest('[data-p],[data-qsel],[data-qmet],[data-explmet]');if(!t)return;
+  var t=e.target.closest('[data-p],[data-qsel],[data-qmet],[data-explmet],[data-ysel]');if(!t)return;
   if(t.dataset.p){st.plat=t.dataset.p;render()}
+  else if(t.dataset.ysel){st.year=+t.dataset.ysel;var qs2=availQs(),hasQ=qs2.some(function(x){return x.y===st.year&&x.q===st.quarter});if(!hasQ){var ay=qs2.filter(function(x){return x.y===st.year});st.quarter=ay.length?ay[ay.length-1].q:1}render()}
   else if(t.dataset.qsel){st.quarter=+t.dataset.qsel;render()}
   else if(t.dataset.qmet){st.qmet=t.dataset.qmet;render()}
   else if(t.dataset.explmet){
