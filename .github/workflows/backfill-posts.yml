@@ -1,0 +1,75 @@
+name: Backfill de publicações individuais
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Data inicial (YYYY-MM-DD) — ex: 2024-01-01'
+        required: true
+        default: '2024-01-01'
+      end_date:
+        description: 'Data final (YYYY-MM-DD) — padrão: hoje'
+        required: false
+        default: ''
+      skip_instagram:
+        description: 'Pular dados do Instagram'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      skip_insights:
+        description: 'Não buscar insights por post (mais rápido, apenas campos básicos)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  backfill-posts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar dependências Python
+        run: pip install requests
+
+      - name: Montar argumentos
+        id: args
+        run: |
+          ARGS="--start ${{ github.event.inputs.start_date }}"
+          if [ -n "${{ github.event.inputs.end_date }}" ]; then
+            ARGS="$ARGS --end ${{ github.event.inputs.end_date }}"
+          fi
+          if [ "${{ github.event.inputs.skip_instagram }}" = "true" ]; then
+            ARGS="$ARGS --skip-instagram"
+          fi
+          if [ "${{ github.event.inputs.skip_insights }}" = "true" ]; then
+            ARGS="$ARGS --skip-insights"
+          fi
+          echo "args=$ARGS" >> $GITHUB_OUTPUT
+
+      - name: Executar backfill de publicações
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID || '447748898661292' }}
+        run: python scripts/backfill_posts.py ${{ steps.args.outputs.args }}
+
+      - name: Commit e push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dados/posts.json
+          if git diff --cached --quiet; then
+            echo "Nada a commitar."
+          else
+            git commit -m "backfill: publica dados de posts (${{ github.event.inputs.start_date }} → ${{ github.event.inputs.end_date || 'hoje' }})"
+            git push
+          fi
