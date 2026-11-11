@@ -30,10 +30,16 @@ jobs:
           FB_PAGE_ID: "447748898661292"
         run: python scripts/update_metrics.py
 
+      - name: Coletar publicacoes individuais (posts)
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: "447748898661292"
+        run: python scripts/update_posts.py
+
       - name: Commit e push (se houver alteracoes)
         run: |
           git config --global user.name  'ASCOM Bot'
           git config --global user.email 'ascom@unifesspa.edu.br'
-          git add dados/metricas.json
-          git diff --quiet --staged || git commit -m "chore: atualiza metricas $(date +%Y-%m-%d)"
+          git add dados/metricas.json dados/posts.json
+          git diff --quiet --staged || git commit -m "chore: atualiza metricas e posts $(date +%Y-%m-%d)"
           git push
