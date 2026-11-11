@@ -69,15 +69,26 @@ FB_METRICS_FALLBACK = {
     "page_media_view":              "page_impressions",
 }
 
+# Métricas IG com suporte a period=day em v21 — série diária via "values"
+# impressions, profile_views, website_clicks e follower_count foram removidas:
+# impressions e follower_count não aceitam period=day em v21;
+# profile_views foi renomeada para profile_visits (ainda instável);
+# website_clicks foi substituída por profile_links_taps (ver IG_TOTAL_VALUE_METRICS).
 IG_DIRECT_METRICS = {
-    "visualizacoes": "impressions",
-    "alcance":       "reach",
-    "visitas":       "profile_views",
-    "cliques":       "website_clicks",
-    "seguidores":    "follower_count",
+    "alcance": "reach",
 }
 
-IG_ENGAGEMENT_METRICS = ["accounts_engaged"]
+# Métricas IG que exigem metric_type=total_value em v21.
+# A API retorna um único inteiro por janela solicitada, não uma série.
+# Para obter granularidade diária, o backfill itera dia a dia.
+# ATENÇÃO: "cliques" mapeado aqui representa profile_links_taps (toques no link
+# da bio do perfil). Dados anteriores a esta mudança (chave "cliques" no JSON)
+# podem representar website_clicks, que é uma métrica diferente — não compare
+# os dois períodos diretamente.
+IG_TOTAL_VALUE_METRICS = {
+    "interacoes": "accounts_engaged",
+    "cliques":    "profile_links_taps",
+}
 
 
 # =============================================================================
@@ -284,18 +295,26 @@ def count_fb_publications_month(since: str, until_: str) -> tuple[dict, dict]:
 
 def fetch_ig_insights_month(ig_user_id: str, since: str, until_: str) -> dict:
     """
-    Coleta métricas diárias do Instagram para o mês [since, until_).
-    Retorna dict: {json_key: {date_brt: value}}.
+    Coleta métricas diárias do Instagram para o intervalo [since, until_).
+    Retorna dict: {json_key: {date_str: value}}.
+
+    - reach: série diária nativa via period=day (uma chamada por mês).
+    - accounts_engaged / profile_links_taps: exigem metric_type=total_value em v21,
+      que retorna um único inteiro por janela. Para obter granularidade diária,
+      iteramos dia a dia (since=D, until=D+1).
+      Regra: se a API retornar erro ou resposta vazia para um dia, esse dia
+      NÃO é gravado (não inserimos zero para falhas).
     """
     result = {k: {} for k in IG_DIRECT_METRICS}
-    result["interacoes"] = {}
+    for k in IG_TOTAL_VALUE_METRICS:
+        result[k] = {}
 
-    # Métricas diretas (impressões, alcance, visitas, cliques, seguidores)
+    # --- reach: série diária nativa ---
     try:
         data = api_get(
             f"{BASE_URL}/{ig_user_id}/insights",
             params={
-                "metric": ",".join(IG_DIRECT_METRICS.values()),
+                "metric": "reach",
                 "period": "day",
                 "since":  since,
                 "until":  until_,
@@ -304,49 +323,51 @@ def fetch_ig_insights_month(ig_user_id: str, since: str, until_: str) -> dict:
         )
         while data:
             for entry in data.get("data", []):
-                json_key = next(
-                    (k for k, v in IG_DIRECT_METRICS.items() if v == entry["name"]), None
-                )
-                if json_key:
+                if entry.get("name") == "reach":
                     for val in entry.get("values", []):
                         day = utc_to_brt_date(val.get("end_time", ""))
                         if day and day >= since and day < until_:
-                            result[json_key][day] = val.get("value", 0)
+                            result["alcance"][day] = val.get("value", 0)
             next_url = data.get("paging", {}).get("next")
             if not next_url:
                 break
             data = api_get(next_url, {})
     except Exception as e:
-        print(f"    AVISO IG métricas diretas {since}: {e}", file=sys.stderr)
+        print(f"    AVISO IG alcance (reach) {since}: {e}", file=sys.stderr)
     time.sleep(0.3)
 
-    # Interações com conteúdo (accounts_engaged)
-    for metric_name in [*IG_ENGAGEMENT_METRICS, "total_interactions"]:
-        try:
-            data = api_get(
-                f"{BASE_URL}/{ig_user_id}/insights",
-                params={
-                    "metric": metric_name,
-                    "period": "day",
-                    "since":  since,
-                    "until":  until_,
-                    "access_token": TOKEN,
-                },
-            )
-            while data:
-                for entry in data.get("data", []):
-                    for val in entry.get("values", []):
-                        day = utc_to_brt_date(val.get("end_time", ""))
-                        if day and day >= since and day < until_:
-                            result["interacoes"][day] = val.get("value", 0)
-                next_url = data.get("paging", {}).get("next")
-                if not next_url:
-                    break
-                data = api_get(next_url, {})
-            break  # usou este metric_name com sucesso
-        except Exception as e:
-            print(f"    AVISO IG interacoes ({metric_name}): {e}", file=sys.stderr)
-    time.sleep(0.3)
+    # --- accounts_engaged e profile_links_taps: total_value, dia a dia ---
+    # Gera lista de dias do intervalo [since, until_)
+    cur = date.fromisoformat(since)
+    end = date.fromisoformat(until_)
+    while cur < end:
+        day_since = cur.isoformat()
+        day_until = (cur + timedelta(days=1)).isoformat()
+        for json_key, metric_name in IG_TOTAL_VALUE_METRICS.items():
+            try:
+                data = api_get(
+                    f"{BASE_URL}/{ig_user_id}/insights",
+                    params={
+                        "metric":      metric_name,
+                        "period":      "day",
+                        "metric_type": "total_value",
+                        "since":       day_since,
+                        "until":       day_until,
+                        "access_token": TOKEN,
+                    },
+                )
+                entries = data.get("data", [])
+                if entries:
+                    tv = entries[0].get("total_value", {})
+                    if "value" in tv:
+                        result[json_key][day_since] = tv["value"]
+                    # Se "value" ausente: não grava — dado indisponível, não zero
+            except Exception as e:
+                print(f"    AVISO IG {json_key} ({metric_name}) {day_since}: {e}",
+                      file=sys.stderr)
+                # Não grava nada para este dia — falha não vira zero
+            time.sleep(0.15)
+        cur += timedelta(days=1)
 
     return result
 

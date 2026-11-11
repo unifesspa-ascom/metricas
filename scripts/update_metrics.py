@@ -55,21 +55,24 @@ FB_METRICS_FALLBACK = {
 }
 
 # --- Instagram User Insights ---
+# Métricas com série diária nativa (period=day retorna values[{end_time, value}]).
+# impressions, profile_views, website_clicks e follower_count foram removidas:
+# impressions e follower_count não aceitam period=day em v21;
+# profile_views foi renomeada/instabilizada em v20+;
+# website_clicks foi substituída por profile_links_taps (ver IG_TOTAL_VALUE_METRICS).
 IG_DIRECT_METRICS = {
-    "visualizacoes": "impressions",
-    "alcance":       "reach",      # alcance diário da conta (único por dia, não soma por post)
-    "visitas":       "profile_views",
-    "cliques":       "website_clicks",
-    "seguidores":    "follower_count",
+    "alcance": "reach",
 }
 
-# Métricas de engajamento com conteúdo (ponto 1 da análise ASCOM):
-# "accounts_engaged" = contas únicas que interagiram com qualquer conteúdo
-#   (curtidas + comentários + compartilhamentos + salvamentos)
-# Corresponde ao campo "Interações com o Conteúdo" do Meta Business Suite.
-# Anteriormente o script usava cliques de contato (email, telefone etc.),
-# que é uma métrica diferente e incorreta para este relatório.
-IG_ENGAGEMENT_METRICS = ["accounts_engaged"]
+# Métricas que exigem metric_type=total_value em v21 — retornam um inteiro
+# por janela solicitada. Para granularidade diária, chamamos com since=D, until=D+1.
+# ATENÇÃO: "cliques" representa profile_links_taps (toques no link da bio).
+# Dados históricos de "cliques" anteriores a esta mudança podem representar
+# website_clicks — métrica diferente; não compare os dois períodos diretamente.
+IG_TOTAL_VALUE_METRICS = {
+    "interacoes": "accounts_engaged",
+    "cliques":    "profile_links_taps",
+}
 
 
 def api_get(url, params):
@@ -168,11 +171,12 @@ def get_ig_user_id():
     return ig["id"]
 
 
-def fetch_ig_insights(ig_user_id, metric_names):
+def fetch_ig_insights_reach(ig_user_id):
+    """Coleta reach (série diária nativa) para ontem."""
     return api_get(
         f"{BASE_URL}/{ig_user_id}/insights",
         params={
-            "metric": ",".join(metric_names),
+            "metric": "reach",
             "period": "day",
             "since":  since,
             "until":  until_,
@@ -181,40 +185,58 @@ def fetch_ig_insights(ig_user_id, metric_names):
     )
 
 
+def fetch_ig_total_value(ig_user_id, metric_name, day_since, day_until):
+    """
+    Coleta métrica que exige metric_type=total_value para uma janela de exatamente
+    um dia (since=D, until=D+1). Retorna o inteiro ou None se indisponível.
+    Nunca retorna 0 por falha — somente retorna 0 se a API explicitamente informar 0.
+    """
+    data = api_get(
+        f"{BASE_URL}/{ig_user_id}/insights",
+        params={
+            "metric":      metric_name,
+            "period":      "day",
+            "metric_type": "total_value",
+            "since":       day_since,
+            "until":       day_until,
+            "access_token": TOKEN,
+        },
+    )
+    entries = data.get("data", [])
+    if not entries:
+        return None
+    tv = entries[0].get("total_value", {})
+    return tv.get("value")  # None se "value" ausente
+
+
 def fetch_instagram_metrics():
     ig_user_id = get_ig_user_id()
     result     = {}
 
-    # Metricas diretas
-    data = fetch_ig_insights(ig_user_id, list(IG_DIRECT_METRICS.values()))
-    for entry in data.get("data", []):
-        json_key = next((k for k, v in IG_DIRECT_METRICS.items() if v == entry["name"]), None)
-        if json_key:
-            value = extract_day_value(entry, yesterday)
-            result[json_key] = value
-            print(f"  IG {json_key}: {value}")
-
-    # Interações com o conteúdo (ponto 1 da análise ASCOM):
-    # "accounts_engaged" = contas únicas que interagiram com qualquer conteúdo
-    # (curtidas + comentários + compartilhamentos + salvamentos + respostas).
-    # Corresponde ao campo "Interações" do Meta Business Suite.
-    # NOTA: se accounts_engaged não estiver disponível nesta conta/token,
-    # o script loga o aviso e usa 0. Verificar no log da Action e, se necessário,
-    # testar "total_interactions" como alternativa.
+    # --- reach: série diária nativa ---
     try:
-        eng = fetch_ig_insights(ig_user_id, IG_ENGAGEMENT_METRICS)
-        result["interacoes"] = sum(extract_day_value(e, yesterday) for e in eng.get("data", []))
-        print(f"  IG interacoes (accounts_engaged): {result['interacoes']}")
+        data = fetch_ig_insights_reach(ig_user_id)
+        for entry in data.get("data", []):
+            if entry.get("name") == "reach":
+                value = extract_day_value(entry, yesterday)
+                result["alcance"] = value
+                print(f"  IG alcance (reach): {value}")
     except Exception as e:
-        print(f"  AVISO IG interacoes (accounts_engaged indisponivel): {e}", file=sys.stderr)
-        # Fallback: tenta total_interactions
+        print(f"  AVISO IG alcance (reach): {e}", file=sys.stderr)
+
+    # --- accounts_engaged e profile_links_taps: total_value, janela de 1 dia ---
+    for json_key, metric_name in IG_TOTAL_VALUE_METRICS.items():
         try:
-            eng2 = fetch_ig_insights(ig_user_id, ["total_interactions"])
-            result["interacoes"] = sum(extract_day_value(e, yesterday) for e in eng2.get("data", []))
-            print(f"  IG interacoes (total_interactions fallback): {result['interacoes']}")
-        except Exception as e2:
-            print(f"  AVISO IG interacoes fallback falhou: {e2}", file=sys.stderr)
-            result.setdefault("interacoes", 0)
+            value = fetch_ig_total_value(ig_user_id, metric_name, since, until_)
+            if value is not None:
+                result[json_key] = value
+                print(f"  IG {json_key} ({metric_name}): {value}")
+            else:
+                print(f"  AVISO IG {json_key} ({metric_name}): resposta vazia, dia não gravado",
+                      file=sys.stderr)
+        except Exception as e:
+            print(f"  AVISO IG {json_key} ({metric_name}): {e}", file=sys.stderr)
+            # Não grava — falha não vira zero
 
     # Contagem de publicacoes e stories via /media
     try:
