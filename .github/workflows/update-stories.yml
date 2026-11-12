@@ -3,8 +3,8 @@ name: Observar stories do Instagram
 on:
   workflow_dispatch:
   # Ativar somente apos aprovacao. Brasilia: UTC-3 (America/Sao_Paulo).
-  # schedule:
-  #   - cron: '17 0,6,12,18 * * *'  # BRT: 21h17, 03h17, 09h17, 15h17.
+  schedule:
+    - cron: '17 0,6,12,18 * * *'  # BRT: 21h17, 03h17, 09h17, 15h17.
 
 permissions: {}
 
