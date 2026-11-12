@@ -1,0 +1,230 @@
+name: Observar stories do Instagram
+
+on:
+  workflow_dispatch:
+  # Ativar somente apos aprovacao. Brasilia: UTC-3 (America/Sao_Paulo).
+  # schedule:
+  #   - cron: '17 0,6,12,18 * * *'  # BRT: 21h17, 03h17, 09h17, 15h17.
+
+permissions: {}
+
+concurrency:
+  group: instagram-stories-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  update-stories:
+    # Manual dispatch from other branches must not publish to the default branch.
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+      TARGET_BRANCH: ${{ github.event.repository.default_branch }}
+      # Observed: 2 stories / 6 GETs. Room for roughly 47-49 stories with
+      # complete insights, depending on listing pages. Budgets are not coverage.
+      REQUEST_BUDGET: '100'
+      PAGE_BUDGET: '5'
+
+    steps:
+      - name: Checkout da branch padrao
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: python -m pip install requests tzdata
+
+      - name: Validar entrada e preservar baseline local
+        id: prepare
+        run: |
+          python -B - <<'PY'
+          import importlib.util
+          import os
+          from pathlib import Path
+          import subprocess
+          from zoneinfo import ZoneInfo
+
+          spec = importlib.util.spec_from_file_location('stories', 'scripts/update_stories.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          _, original = module.load_document(Path('dados/stories.json'), ZoneInfo(module.LOCAL_ZONE))
+          if original is None:
+              raise SystemExit('Inventario inicial ausente; nenhuma coleta iniciada.')
+          (Path(os.environ['RUNNER_TEMP']) / 'stories-before.json').write_bytes(original)
+          head = subprocess.run(['git', 'rev-parse', 'HEAD'], text=True, capture_output=True, check=True).stdout.strip()
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'base_head={head}\n')
+          print('Inventario de entrada valido; baseline preservada fora do repositorio.')
+          PY
+
+      - name: Coletar stories com limites explicitos
+        id: collect
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: |
+          # Preserve the collector's existing Page ID default if the optional
+          # FB_PAGE_ID secret is absent. Never print either credential.
+          if [[ -z "${FB_PAGE_ID:-}" ]]; then unset FB_PAGE_ID; fi
+          set +e
+          python -B -X utf8 scripts/update_stories.py --max-requests "$REQUEST_BUDGET" --max-pages "$PAGE_BUDGET"
+          result=$?
+          set -e
+          case "$result" in
+            0|2) printf 'exit_code=%s\n' "$result" >> "$GITHUB_OUTPUT" ;;
+            *) echo '::error::Falha fatal do coletor. Nenhum commit sera realizado.'; exit 1 ;;
+          esac
+
+      - name: Validar resultado e preservacao do historico
+        id: validate
+        env:
+          COLLECTOR_EXIT: ${{ steps.collect.outputs.exit_code }}
+        run: |
+          python -B - <<'PY'
+          import hashlib
+          import importlib.util
+          import os
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          spec = importlib.util.spec_from_file_location('stories', 'scripts/update_stories.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          zone = ZoneInfo(module.LOCAL_ZONE)
+          before, _ = module.load_document(Path(os.environ['RUNNER_TEMP']) / 'stories-before.json', zone)
+          after, raw = module.load_document(Path('dados/stories.json'), zone)
+          def require(condition):
+              if not condition:
+                  raise SystemExit('Validacao de seguranca falhou; nenhum commit sera realizado.')
+
+          require(raw is not None)
+          require(len(after['runs']) == len(before['runs']) + 1)
+          require(after['runs'][:-1] == before['runs'])
+          require({k: v for k, v in after.items() if k not in ('stories', 'runs', 'source')} ==
+                  {k: v for k, v in before.items() if k not in ('stories', 'runs', 'source')})
+          require({k: v for k, v in after['source'].items() if k != 'account_fingerprint'} ==
+                  {k: v for k, v in before['source'].items() if k != 'account_fingerprint'})
+          require(before['source']['account_fingerprint'] is None or
+                  after['source']['account_fingerprint'] == before['source']['account_fingerprint'])
+          run = after['runs'][-1]
+          code = os.environ['COLLECTOR_EXIT']
+          require((code == '0' and run['status'] == 'complete') or
+                  (code == '2' and run['status'] in ('partial', 'failed')))
+          require(run['request_limit'] == int(os.environ['REQUEST_BUDGET']))
+          require(run['page_limit'] == int(os.environ['PAGE_BUDGET']))
+          require(set(before['stories']).issubset(after['stories']))
+          observed = 0
+          for key, story in after['stories'].items():
+              previous = before['stories'].get(key)
+              old_snapshots = previous['snapshots'] if previous else []
+              require(story['snapshots'][:len(old_snapshots)] == old_snapshots)
+              added = story['snapshots'][len(old_snapshots):]
+              require(len(added) <= 1 and all(s['run_id'] == run['id'] for s in added))
+              observed += bool(added)
+              if previous:
+                  require({k: v for k, v in story.items() if k not in ('snapshots', 'last_seen_at')} ==
+                          {k: v for k, v in previous.items() if k not in ('snapshots', 'last_seen_at')})
+                  require(module.parse_stamp(story['last_seen_at']) >= module.parse_stamp(previous['last_seen_at']))
+                  require(bool(added) or story['last_seen_at'] == previous['last_seen_at'])
+              else:
+                  require(len(added) == 1)
+          require(observed == run['distinct_stories_observed'])
+          (Path(os.environ['RUNNER_TEMP']) / 'stories-validated.json').write_bytes(raw)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f"document_sha256={hashlib.sha256(raw).hexdigest()}\n")
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write(f"### Stories do Instagram\nEstado: {run['status']}. Listagem: {run['listing_status']}. "
+                            f"Observados: {observed}. GETs: {run['requests_used']}.\n\n"
+                            'Contagem observada nao comprova producao total ou cobertura diaria completa.\n')
+          if code == '2':
+              print('::warning::Observacao parcial ou falha controlada registrada. Historico preservado; cobertura nao confirmada.')
+          print('JSON e historico validados. Nenhum identificador ou resposta bruta exibido.')
+          PY
+
+      - name: Publicar somente o inventario validado
+        id: publish
+        env:
+          BASE_HEAD: ${{ steps.prepare.outputs.base_head }}
+          DOCUMENT_SHA256: ${{ steps.validate.outputs.document_sha256 }}
+        run: |
+          python -B - <<'PY'
+          import hashlib
+          import importlib.util
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          from zoneinfo import ZoneInfo
+
+          target = 'dados/stories.json'
+          def git(*args, allowed=(0,)):
+              result = subprocess.run(['git', *args], capture_output=True, text=True)
+              if result.returncode not in allowed:
+                  raise SystemExit('Operacao Git recusada; nenhum force push sera usado. Consultar estado remoto antes de tentar novamente.')
+              return result
+
+          base = os.environ['BASE_HEAD']
+          if re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', base) is None:
+              raise SystemExit('Baseline Git invalida.')
+          branch = os.environ['TARGET_BRANCH']
+          git('check-ref-format', 'refs/heads/' + branch)
+          if git('rev-parse', 'HEAD').stdout.strip() != base:
+              raise SystemExit('HEAD local mudou durante a coleta.')
+          if git('diff', '--cached', '--name-only').stdout.strip():
+              raise SystemExit('Index Git inesperado; commit bloqueado.')
+          changed = git('diff', '--name-only').stdout.splitlines()
+          if changed != [target]:
+              raise SystemExit('Alteracoes fora do inventario ou ausencia de nova gravacao; commit bloqueado.')
+          if hashlib.sha256(Path(target).read_bytes()).hexdigest() != os.environ['DOCUMENT_SHA256']:
+              raise SystemExit('Inventario mudou apos a validacao.')
+
+          git('fetch', '--no-tags', 'origin', 'refs/heads/' + branch)
+          remote = git('rev-parse', 'FETCH_HEAD').stdout.strip()
+          git('merge-base', '--is-ancestor', base, remote)
+          protected = (target, 'scripts/update_stories.py', '.github/workflows/update-stories.yml')
+          if git('diff', '--quiet', base, remote, '--', *protected, allowed=(0, 1)).returncode:
+              raise SystemExit('Remoto alterou inventario, coletor ou workflow. Publicacao bloqueada; nenhuma mescla automatica desses arquivos.')
+
+          git('config', 'user.name', 'github-actions[bot]')
+          git('config', 'user.email', 'github-actions[bot]@users.noreply.github.com')
+          git('add', '--', target)
+          if git('diff', '--cached', '--name-only').stdout.splitlines() != [target]:
+              raise SystemExit('Commit conteria arquivos nao autorizados.')
+          git('commit', '-m', 'chore: registra observacao de stories do Instagram')
+          if remote != base:
+              git('rebase', remote)
+
+          if git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD').stdout.splitlines() != [target]:
+              raise SystemExit('Commit final fora do escopo autorizado.')
+          if hashlib.sha256(Path(target).read_bytes()).hexdigest() != os.environ['DOCUMENT_SHA256']:
+              raise SystemExit('Inventario alterado durante alinhamento com o remoto.')
+          spec = importlib.util.spec_from_file_location('stories', 'scripts/update_stories.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          module.load_document(Path(target), ZoneInfo(module.LOCAL_ZONE))
+          # One ordinary push. A later remote race rejects it; never force/retry.
+          git('push', 'origin', 'HEAD:refs/heads/' + branch)
+          print('Somente dados/stories.json foi publicado, sem force push.')
+          PY
+
+      - name: Preservar inventario validado se a publicacao falhar
+        if: ${{ failure() && steps.validate.outcome == 'success' && steps.publish.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stories-nao-publicados-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stories-validated.json
+          retention-days: 7
+          if-no-files-found: error
