@@ -2,48 +2,96 @@ name: Atualizar Metricas
 
 on:
   schedule:
-    # 09:17 Brasilia (UTC-3)
+    # 09:17 Brasilia (UTC-3), unchanged.
     - cron: '17 12 * * *'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
-  update-metrics:
+  publications:
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
-
+    concurrency:
+      group: publications-${{ github.repository }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+      TARGET_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - name: Checkout
+      - name: Checkout da branch padrao
         uses: actions/checkout@v4
-
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Configurar Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Instalar dependencias
-        run: pip install requests
-
-      - name: Coletar e atualizar metricas
+        run: python -m pip install requests
+      - name: Preparar baseline e candidato fora do repositorio
+        run: python -B -X utf8 scripts/posts_workflow_guard.py prepare --mode update --work "$RUNNER_TEMP/posts-guard"
+      - name: Coletar com 2000 GETs e 50 paginas por rede
+        timeout-minutes: 20
         env:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          FB_PAGE_ID: "447748898661292"
-        run: python scripts/update_metrics.py
-
-      - name: Coletar publicacoes individuais (posts)
-        env:
-          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          FB_PAGE_ID: "447748898661292"
-        run: python scripts/update_posts.py
-
-      - name: Commit e push (se houver alteracoes)
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dados/metricas.json dados/posts.json
-          if git diff --cached --quiet; then
-            echo "Nada a commitar."
-          else
-            git commit -m "chore: atualiza metricas e posts $(date +%Y-%m-%d)"
-            git push
-          fi
+          if [[ -z "${FB_PAGE_ID:-}" ]]; then unset FB_PAGE_ID; fi
+          python -B -X utf8 scripts/posts_workflow_guard.py collect --work "$RUNNER_TEMP/posts-guard"
+      - name: Validar contrato, manifesto e preservacao historica
+        id: validate
+        run: python -B -X utf8 scripts/posts_workflow_guard.py validate --work "$RUNNER_TEMP/posts-guard"
+      - name: Publicar exclusivamente dados/posts.json
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -B -X utf8 scripts/posts_workflow_guard.py publish --work "$RUNNER_TEMP/posts-guard"
+      - name: Preservar candidato validado se a publicacao falhar
+        if: ${{ failure() && steps.validate.outcome == 'success' && steps.publish.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: posts-nao-publicados-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posts-guard/validated-posts.json
+          retention-days: 3
+          if-no-files-found: error
+
+  account-observation:
+    # Independent job: no needs dependency and no account-data publication.
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install requests
+      - name: Coletar conta isoladamente, sem publicar metricas.json ou logs brutos
+        timeout-minutes: 5
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: |
+          if [[ -z "${FB_PAGE_ID:-}" ]]; then unset FB_PAGE_ID; fi
+          python -B -X utf8 scripts/posts_workflow_guard.py account --work "$RUNNER_TEMP/account-observation"

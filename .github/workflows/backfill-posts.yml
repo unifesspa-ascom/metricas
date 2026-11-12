@@ -1,14 +1,14 @@
-name: Backfill de publicações individuais
+name: Backfill de publicacoes individuais
 
 on:
   workflow_dispatch:
     inputs:
       start_date:
-        description: 'Data inicial (YYYY-MM-DD) — ex: 2024-01-01'
+        description: 'Data inicial (YYYY-MM-DD)'
         required: true
         default: '2024-01-01'
       end_date:
-        description: 'Data final (YYYY-MM-DD) — padrão: hoje'
+        description: 'Data final (YYYY-MM-DD), padrao hoje em Brasilia'
         required: false
         default: ''
       skip_instagram:
@@ -16,60 +16,74 @@ on:
         required: false
         default: 'false'
         type: choice
-        options:
-          - 'false'
-          - 'true'
+        options: ['false', 'true']
       skip_insights:
-        description: 'Não buscar insights por post (mais rápido, apenas campos básicos)'
+        description: 'Apenas campos basicos, preservando insights anteriores'
         required: false
         default: 'false'
         type: choice
-        options:
-          - 'false'
-          - 'true'
+        options: ['false', 'true']
+
+permissions: {}
 
 jobs:
   backfill-posts:
+    if: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
-
+    concurrency:
+      group: publications-${{ github.repository }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+      TARGET_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
-      - name: Checkout
+      - name: Checkout da branch padrao
         uses: actions/checkout@v4
-
-      - name: Instalar dependências Python
-        run: pip install requests
-
-      - name: Montar argumentos
-        id: args
-        run: |
-          ARGS="--start ${{ github.event.inputs.start_date }}"
-          if [ -n "${{ github.event.inputs.end_date }}" ]; then
-            ARGS="$ARGS --end ${{ github.event.inputs.end_date }}"
-          fi
-          if [ "${{ github.event.inputs.skip_instagram }}" = "true" ]; then
-            ARGS="$ARGS --skip-instagram"
-          fi
-          if [ "${{ github.event.inputs.skip_insights }}" = "true" ]; then
-            ARGS="$ARGS --skip-insights"
-          fi
-          echo "args=$ARGS" >> $GITHUB_OUTPUT
-
-      - name: Executar backfill de publicações
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: python -m pip install requests
+      - name: Validar entradas e preparar candidato
+        env:
+          BACKFILL_START: ${{ inputs.start_date }}
+          BACKFILL_END: ${{ inputs.end_date }}
+          SKIP_INSTAGRAM: ${{ inputs.skip_instagram }}
+          SKIP_INSIGHTS: ${{ inputs.skip_insights }}
+        run: python -B -X utf8 scripts/posts_workflow_guard.py prepare --mode backfill --work "$RUNNER_TEMP/posts-guard"
+      - name: Coletar com 2000 GETs e 50 paginas por rede
+        timeout-minutes: 20
         env:
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID || '447748898661292' }}
-        run: python scripts/backfill_posts.py ${{ steps.args.outputs.args }}
-
-      - name: Commit e push
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dados/posts.json
-          if git diff --cached --quiet; then
-            echo "Nada a commitar."
-          else
-            git commit -m "backfill: publica dados de posts (${{ github.event.inputs.start_date }} → ${{ github.event.inputs.end_date || 'hoje' }})"
-            git push
-          fi
+          if [[ -z "${FB_PAGE_ID:-}" ]]; then unset FB_PAGE_ID; fi
+          python -B -X utf8 scripts/posts_workflow_guard.py collect --work "$RUNNER_TEMP/posts-guard"
+      - name: Validar contrato, manifesto e preservacao historica
+        id: validate
+        run: python -B -X utf8 scripts/posts_workflow_guard.py validate --work "$RUNNER_TEMP/posts-guard"
+      - name: Publicar exclusivamente dados/posts.json
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -B -X utf8 scripts/posts_workflow_guard.py publish --work "$RUNNER_TEMP/posts-guard"
+      - name: Preservar candidato validado se a publicacao falhar
+        if: ${{ failure() && steps.validate.outcome == 'success' && steps.publish.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: posts-nao-publicados-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/posts-guard/validated-posts.json
+          retention-days: 3
+          if-no-files-found: error
