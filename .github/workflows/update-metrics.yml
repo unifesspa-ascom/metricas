@@ -1,9 +1,9 @@
 name: Atualizar Metricas
 
 on:
-  # schedule:
-  #   # 06:00 UTC = 03:00 Brasilia (UTC-3) — ativar apos validacao manual
-  #   - cron: '0 6 * * *'
+  schedule:
+    # 09:17 Brasilia (UTC-3)
+    - cron: '17 12 * * *'
   workflow_dispatch:
 
 jobs:
