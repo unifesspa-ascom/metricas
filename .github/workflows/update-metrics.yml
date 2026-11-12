@@ -1,9 +1,9 @@
 name: Atualizar Metricas
 
 on:
-  schedule:
-    # 06:00 UTC = 03:00 Brasilia (UTC-3)
-    - cron: '0 6 * * *'
+  # schedule:
+  #   # 06:00 UTC = 03:00 Brasilia (UTC-3) — ativar apos validacao manual
+  #   - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -38,8 +38,12 @@ jobs:
 
       - name: Commit e push (se houver alteracoes)
         run: |
-          git config --global user.name  'ASCOM Bot'
-          git config --global user.email 'ascom@unifesspa.edu.br'
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add dados/metricas.json dados/posts.json
-          git diff --quiet --staged || git commit -m "chore: atualiza metricas e posts $(date +%Y-%m-%d)"
-          git push
+          if git diff --cached --quiet; then
+            echo "Nada a commitar."
+          else
+            git commit -m "chore: atualiza metricas e posts $(date +%Y-%m-%d)"
+            git push
+          fi

@@ -597,6 +597,20 @@ def main():
             print(f"    dias com métricas: {len(next(iter(ig_insights.values()), {}))}")
             print(f"    posts: {ig_posts_sum}  |  stories: {ig_sto_sum}")
 
+            if args.dry_run:
+                preview_keys = ["alcance", "interacoes", "cliques"]
+                all_days = sorted({d for k in preview_keys
+                                   for d in ig_insights.get(k, {})})
+                if all_days:
+                    print("    [dry-run] valores que seriam gravados:")
+                    for day in all_days:
+                        vals = "  ".join(
+                            f"{k}={ig_insights[k][day]}"
+                            for k in preview_keys
+                            if day in ig_insights.get(k, {})
+                        )
+                        print(f"      {day}: {vals}")
+
     # ===== RECALCULA TRIMESTRES E SALVA =====
     if not args.dry_run:
         for yr in years_covered:

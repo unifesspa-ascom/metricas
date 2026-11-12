@@ -8,6 +8,7 @@ Variaveis de ambiente necessarias:
   FB_PAGE_ID            -- ID da pagina do Facebook (padrao: 447748898661292)
 """
 
+import argparse
 import os
 import json
 import sys
@@ -133,9 +134,9 @@ def fetch_facebook_metrics():
                 print(f"  AVISO FB {json_key} ({name}): {e}", file=sys.stderr)
 
         if value is None:
-            value = 0
-            print(f"  AVISO FB {json_key}: todas as tentativas falharam, usando 0",
+            print(f"  AVISO FB {json_key}: todas as tentativas falharam, dia nao gravado",
                   file=sys.stderr)
+            continue  # nao inclui no resultado — falha nao vira zero
         result[json_key] = value
         print(f"  FB {json_key}: {value}")
 
@@ -283,8 +284,7 @@ def fetch_instagram_metrics():
     except Exception as e:
         print(f"  Aviso IG publicacoes/stories: {e}", file=sys.stderr)
         result.setdefault("publicacoes", 0)
-        result.setdefault("stories", 0)
-        result.setdefault("visualizacoes_stories", 0)
+        # stories e visualizacoes_stories omitidos em falha — nao gravam zero
 
     return result
 
@@ -341,7 +341,7 @@ def recalcular_conteudo(data, year_str, q):
             existing["stories"] = stories_total
 
 
-def update_json(fb_metrics, ig_metrics):
+def update_json(fb_metrics, ig_metrics, dry_run=False):
     path = "dados/metricas.json"
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -360,6 +360,17 @@ def update_json(fb_metrics, ig_metrics):
     recalcular_conteudo(data, year_str, q)
     print(f"  Conteudo {year_str} {TRI_LABELS[q]} atualizado.")
 
+    if dry_run:
+        print(f"\n[dry-run] registros que seriam gravados em {yesterday}:")
+        print("  Facebook:")
+        for k, v in fb_metrics.items():
+            print(f"    {k}: {v}")
+        print("  Instagram:")
+        for k, v in ig_metrics.items():
+            print(f"    {k}: {v}")
+        print("\n[dry-run] metricas.json NAO foi modificado.")
+        return
+
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
 
@@ -367,6 +378,16 @@ def update_json(fb_metrics, ig_metrics):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Coleta métricas diárias de Facebook e Instagram e atualiza metricas.json."
+    )
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Faz as consultas à API mas não grava no metricas.json.")
+    args = parser.parse_args()
+
+    if args.dry_run:
+        print("MODO DRY-RUN: nenhum dado sera gravado.\n")
+
     print(f"Coletando metricas de {yesterday}...\n")
     print("Facebook:")
     fb = fetch_facebook_metrics()
@@ -378,7 +399,7 @@ def main():
         print(f"  ERRO Instagram: {e}", file=sys.stderr)
         ig = {}
 
-    update_json(fb, ig)
+    update_json(fb, ig, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
