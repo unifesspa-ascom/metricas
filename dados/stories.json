@@ -14,7 +14,7 @@
       "published_at": "2026-11-11T20:39:40+00:00",
       "publication_date_brt": "2026-11-11",
       "first_seen_at": "2026-11-12T14:36:02.915287+00:00",
-      "last_seen_at": "2026-11-12T14:42:02.635497+00:00",
+      "last_seen_at": "2026-11-12T16:02:32.787266+00:00",
       "snapshots": [
         {
           "run_id": "ab0a7d3d31d14bbfb21271cac745d8ac",
@@ -65,6 +65,31 @@
             }
           },
           "collected_at": "2026-11-12T14:42:04.678229+00:00"
+        },
+        {
+          "run_id": "bdaad6571aea4416b803f7be26846f61",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 1409,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-12T16:02:33.401406+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 1103,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-12T16:02:33.925386+00:00"
+            }
+          },
+          "collected_at": "2026-11-12T16:02:33.925402+00:00"
         }
       ]
     },
@@ -74,7 +99,7 @@
       "published_at": "2026-11-12T12:59:04+00:00",
       "publication_date_brt": "2026-11-12",
       "first_seen_at": "2026-11-12T14:36:02.915287+00:00",
-      "last_seen_at": "2026-11-12T14:42:02.635497+00:00",
+      "last_seen_at": "2026-11-12T16:02:32.787266+00:00",
       "snapshots": [
         {
           "run_id": "ab0a7d3d31d14bbfb21271cac745d8ac",
@@ -125,6 +150,31 @@
             }
           },
           "collected_at": "2026-11-12T14:42:06.558313+00:00"
+        },
+        {
+          "run_id": "bdaad6571aea4416b803f7be26846f61",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 787,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-12T16:02:34.509961+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 580,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-12T16:02:34.930487+00:00"
+            }
+          },
+          "collected_at": "2026-11-12T16:02:34.930515+00:00"
         }
       ]
     }
@@ -165,6 +215,25 @@
       "insights_status": "complete",
       "status": "complete",
       "finished_at": "2026-11-12T14:42:06.558313+00:00",
+      "requests_used": 6,
+      "issues": []
+    },
+    {
+      "id": "bdaad6571aea4416b803f7be26846f61",
+      "api_version": "v21.0",
+      "started_at": "2026-11-12T16:02:31.953090+00:00",
+      "listing_status": "complete",
+      "pagination_status": "exhausted",
+      "pages_received": 1,
+      "distinct_stories_observed": 2,
+      "duplicates": 0,
+      "invalid_records": 0,
+      "conflicting_timestamps": 0,
+      "request_limit": 100,
+      "page_limit": 5,
+      "insights_status": "complete",
+      "status": "complete",
+      "finished_at": "2026-11-12T16:02:34.930547+00:00",
       "requests_used": 6,
       "issues": []
     }
