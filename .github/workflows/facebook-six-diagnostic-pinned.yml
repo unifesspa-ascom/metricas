@@ -1,0 +1,117 @@
+name: Facebook six-metric diagnostic (reviewed commit)
+'on':
+  workflow_dispatch:
+    inputs:
+      confirm_read_only:
+        description: 'Autorizo no maximo 6 GETs Facebook neste run, sem publicar dados'
+        required: true
+        default: false
+        type: boolean
+      day:
+        description: 'Um dia fechado YYYY-MM-DD; hoje e futuro sao recusados'
+        required: true
+        type: string
+permissions: {}
+concurrency:
+  group: meta-account-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: ${{ github.repository == 'unifesspa-ascom/metricas' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.confirm_read_only == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+      DIAGNOSTIC_DAY: ${{ inputs.day }}
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+        working-directory: diagnostic
+    steps:
+      - name: Checkout exclusivo do commit revisado
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: unifesspa-ascom/metricas
+          ref: 8900c92ec8580cf2b917e5a3c896e56f68c41f26
+          path: diagnostic
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/diagnose_facebook_six.py
+            /scripts/facebook_account_metrics.py
+            /scripts/account_metrics_safety.py
+            /scripts/update_metrics.py
+            /scripts/backfill_metrics.py
+            /tests/test_diagnose_facebook_six.py
+            /tests/test_facebook_account_metrics.py
+            /tests/test_account_metrics_safety.py
+      - name: Verificar SHA e hashes antes de executar codigo
+        run: &integrity |
+          test "$(git rev-parse HEAD)" = '8900c92ec8580cf2b917e5a3c896e56f68c41f26'
+          sha256sum --check --status <<'SHA256'
+          972f2cd07da5cef1a669628cc62729fb39b8042c5c701a396539b5a8fc19c9cd  scripts/diagnose_facebook_six.py
+          1c9b4ad4a2f49ff279c5e0c244dd527249f8227493e358cedf24cda0eafd25b4  scripts/facebook_account_metrics.py
+          1685d0eae985cef2901d58b7d0d7c8f54a22a3ceb63e9c56e868f9625d908171  scripts/account_metrics_safety.py
+          06186b7db91cfe4860d2a9155656e1a50d502a21f22ec8f337d86134686789a4  tests/test_diagnose_facebook_six.py
+          72428ac87cf2703d1f7d5296bd54e39125c8a4d26bafc269411e4ba976a7fafe  tests/test_facebook_account_metrics.py
+          07ea148b4451950738036c834f328f68e572ee17360e9024bdc0ed27f81a953a  tests/test_account_metrics_safety.py
+          e28e6e539725c71f4d4b034ac31d2d7a9bb02ff90dd743adc54bbf2fe4dce2b9  scripts/update_metrics.py
+          c9c50ab7a48bce0da1e53b5d8b1a9473eefd071566ce3ad93720fe780d1a50f3  scripts/backfill_metrics.py
+          SHA256
+          git diff --quiet HEAD --
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Preparar dependencias sem secrets
+        run: |
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/facebook-six-venv"
+          "$RUNNER_TEMP/facebook-six-venv/bin/python" -B -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --only-binary=:all: --no-cache-dir requests==2.32.5 urllib3==2.6.3 certifi==2025.10.5 charset-normalizer==3.4.4 idna==3.11
+      - name: Testes offline e preflight sem secrets
+        run: |
+          "$RUNNER_TEMP/facebook-six-venv/bin/python" -I -B - <<'PY'
+          import contextlib, io, json, os, socket, sys, unittest
+          from pathlib import Path
+          def denied(*args, **kwargs):
+              raise AssertionError('offline: network forbidden')
+          socket.socket.connect = denied
+          socket.socket.connect_ex = denied
+          socket.socket.sendto = denied
+          socket.create_connection = denied
+          socket.getaddrinfo = denied
+          assert 'FB_PAGE_ACCESS_TOKEN' not in os.environ
+          assert 'FB_PAGE_ID' not in os.environ
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          patterns = ('test_diagnose_facebook_six.py', 'test_facebook_account_metrics.py', 'test_account_metrics_safety.py')
+          suite = unittest.TestSuite(unittest.defaultTestLoader.discover('tests', pattern=p) for p in patterns)
+          result = unittest.TextTestRunner().run(suite)
+          if not result.wasSuccessful():
+              raise SystemExit(1)
+          import diagnose_facebook_six as diagnostic
+          assert diagnostic.LIMIT == 6 and diagnostic.fb.MAX_REQUESTS == 6
+          assert diagnostic.fb.APPROVED_DAY_ZONE is None
+          assert diagnostic.fb.PUBLICATION_ENABLED is False
+          assert diagnostic.closed_window(os.environ['DIAGNOSTIC_DAY'])
+          output = io.StringIO()
+          with contextlib.redirect_stdout(output):
+              code = diagnostic.main(['--day', os.environ['DIAGNOSTIC_DAY']])
+          assert code == 2
+          assert json.loads(output.getvalue())['status'] == 'explicit_authorization_required'
+          PY
+      - name: Revalidar integridade antes de liberar secrets
+        run: *integrity
+      - name: Diagnostico GET com secrets somente neste passo
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: |
+          "$RUNNER_TEMP/facebook-six-venv/bin/python" -I -B - <<'PY'
+          import os, sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          import diagnose_facebook_six as diagnostic
+          sys.exit(diagnostic.main(['--day', os.environ['DIAGNOSTIC_DAY'], '--authorize-six-gets']))
+          PY
