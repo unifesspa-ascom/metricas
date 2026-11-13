@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Coleta metricas diarias do Facebook e Instagram via Meta Graph API
-e atualiza o arquivo dados/metricas.json.
+Candidato de observacao de conta Facebook e Instagram via Meta Graph API.
+Gravacao de dados/metricas.json suspensa; --dry-run legado ainda faz consultas.
 
 Variaveis de ambiente necessarias:
   FB_PAGE_ACCESS_TOKEN  -- Token de acesso permanente da pagina
@@ -13,6 +13,7 @@ import os
 import json
 import sys
 import requests
+from facebook_account_metrics import Client as FacebookClient, METRICS as FB_METRICS, collect_series, require_publication_disabled
 from datetime import date, timedelta, datetime, timezone
 
 API_VERSION = "v21.0"
@@ -30,30 +31,9 @@ since     = yesterday
 until_    = now_brt.date().isoformat()
 
 # --- Facebook Page Insights ---
-# NOTA: alguns nomes de métricas foram alterados na Graph API v18.0+.
-# O script tenta o nome principal; se falhar, registra aviso com o nome que falhou
-# para facilitar diagnóstico. Nomes alternativos conhecidos estão nos comentários.
-FB_METRICS = {
-    # viewers únicos — se falhar, tentar page_impressions_unique
-    "visualizadores": "page_total_media_view_unique",
-    # visualizações totais — se falhar, tentar page_impressions
-    "visualizacoes":  "page_media_view",
-    # engajamentos — se falhar, tentar page_actions_post_reactions_total
-    "interacoes":     "page_post_engagements",
-    # ações totais no perfil
-    "cliques":        "page_total_actions",
-    # novos seguidores
-    "seguidores":     "page_daily_follows_unique",
-    # visitas ao perfil
-    "visitas":        "page_views_total",
-}
+# Facebook metric names come from the shared contract; none is a fallback.
 
-# Nomes alternativos para métricas FB potencialmente depreciadas (v18.0+).
-# Se a métrica principal falhar, tenta o alternativo (quando disponível).
-FB_METRICS_FALLBACK = {
-    "page_total_media_view_unique": "page_impressions_unique",
-    "page_media_view":              "page_impressions",
-}
+# No fallback metrics: availability and semantic equivalence require separate review.
 
 # --- Instagram User Insights ---
 # Métricas com série diária nativa (period=day retorna values[{end_time, value}]).
@@ -112,51 +92,17 @@ def count_paged_results(url, params):
 
 # ===== FACEBOOK =====
 
-def fetch_facebook_metrics():
-    result = {}
-    for json_key, metric_name in FB_METRICS.items():
-        value = None
-        # Tenta o nome principal; em caso de erro, tenta o alternativo (se houver)
-        for name in [metric_name, FB_METRICS_FALLBACK.get(metric_name)]:
-            if name is None:
-                continue
-            try:
-                data = api_get(
-                    f"{BASE_URL}/{PAGE_ID}/insights/{name}/day",
-                    params={"since": since, "until": until_, "access_token": TOKEN},
-                )
-                value = extract_day_value(data["data"][0], yesterday) if data.get("data") else 0
-                if name != metric_name:
-                    print(f"  AVISO FB {json_key}: '{metric_name}' falhou, usando '{name}'",
-                          file=sys.stderr)
-                break
-            except Exception as e:
-                print(f"  AVISO FB {json_key} ({name}): {e}", file=sys.stderr)
+def fetch_facebook_metrics(*, day_zone=None):
+    """Insights only; incomplete/invalid/missing values are never replaced with zero.
 
-        if value is None:
-            print(f"  AVISO FB {json_key}: todas as tentativas falharam, dia nao gravado",
-                  file=sys.stderr)
-            continue  # nao inclui no resultado — falha nao vira zero
-        result[json_key] = value
-        print(f"  FB {json_key}: {value}")
-
-    # Publicacoes no feed (posts publicados ontem)
-    feed_count = count_paged_results(
-        f"{BASE_URL}/{PAGE_ID}/published_posts",
-        {"since": since, "until": until_, "access_token": TOKEN, "fields": "id"},
-    )
-    result["publicacoes"] = feed_count
-    print(f"  FB publicacoes (feed): {feed_count}")
-
-    # Stories publicados ontem
-    stories_count = count_paged_results(
-        f"{BASE_URL}/{PAGE_ID}/stories",
-        {"since": since, "until": until_, "access_token": TOKEN, "fields": "id"},
-    )
-    result["stories"] = stories_count
-    print(f"  FB stories: {stories_count}")
-
-    return result
+    No default day policy is approved. This candidate cannot enable publication.
+    Account post/story counts are left to the separate production automations.
+    """
+    client = FacebookClient(TOKEN)
+    series, statuses = collect_series(client, PAGE_ID, since, until_, day_zone=day_zone)
+    for key, status in statuses.items():
+        print(f"  FB {key}: {status}")
+    return {key: days[yesterday] for key, days in series.items() if yesterday in days}
 
 
 # ===== INSTAGRAM =====
@@ -342,6 +288,8 @@ def recalcular_conteudo(data, year_str, q):
 
 
 def update_json(fb_metrics, ig_metrics, dry_run=False):
+    if not dry_run:
+        require_publication_disabled()
     path = "dados/metricas.json"
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -384,6 +332,9 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Faz as consultas à API mas não grava no metricas.json.")
     args = parser.parse_args()
+
+    if not args.dry_run:
+        parser.error("account_publication_suspended: somente observacao sem gravacao")
 
     if args.dry_run:
         print("MODO DRY-RUN: nenhum dado sera gravado.\n")
