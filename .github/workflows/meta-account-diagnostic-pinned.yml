@@ -1,0 +1,62 @@
+name: Meta account diagnostic (reviewed commit)
+'on':
+  workflow_dispatch:
+    inputs:
+      confirm_read_only:
+        description: 'Confirmo executar ate 16 GETs Meta, sem publicar dados'
+        required: true
+        default: false
+        type: boolean
+permissions: {}
+concurrency:
+  group: meta-account-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: ${{ github.repository == 'unifesspa-ascom/metricas' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.confirm_read_only == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+        working-directory: diagnostic
+    steps:
+      - name: Checkout exclusivo do commit revisado
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: unifesspa-ascom/metricas
+          ref: de9d2cb3df1ed85641d30c26aeed2f83485311c7
+          path: diagnostic
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/diagnose_account_metrics.py
+            /scripts/update_metrics.py
+            /tests/test_diagnose_account_metrics.py
+            /.github/workflows/diagnose-account-metrics.yml
+      - name: Verificar SHA e integridade antes dos testes
+        run: |
+          test "$(git rev-parse HEAD)" = 'de9d2cb3df1ed85641d30c26aeed2f83485311c7'
+          sha256sum --check --status <<'SHA256'
+          b9699b9f059d58b6b2c4f706f877ce3fc7b95dcd8b80927c769efc66c2ca84ba  scripts/diagnose_account_metrics.py
+          c3c64677b0f4f52f24c5d7060032ce4dc8f112c035eb43329f4d4eb9777729bf  scripts/update_metrics.py
+          d174789f911ac8f425e08475975c606b76f84121465441938596b8a299c6d6b1  tests/test_diagnose_account_metrics.py
+          3c134d814a26df4d69c10de0c00542a53e1cce20e633abc35351d69c38d45f4e  .github/workflows/diagnose-account-metrics.yml
+          SHA256
+      - name: Testes offline sem secret
+        run: /usr/bin/python3 -I -S -B -m unittest discover -s tests -p test_diagnose_account_metrics.py -v
+      - name: Preflight sem secret e sem rede
+        run: /usr/bin/python3 -I -S -B scripts/diagnose_account_metrics.py
+      - name: Verificar ausencia de alteracoes antes de liberar o secret
+        run: |
+          git diff --quiet HEAD --
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Diagnostico GET com secret somente neste passo
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: exec /usr/bin/python3 -I -S -B scripts/diagnose_account_metrics.py --execute-read-only
