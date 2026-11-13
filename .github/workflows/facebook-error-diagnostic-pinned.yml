@@ -1,0 +1,60 @@
+name: Facebook error diagnostic (two fixed probes)
+'on':
+  workflow_dispatch:
+    inputs:
+      confirm_read_only:
+        description: 'Confirmo executar 2 GETs Facebook, sem publicar dados'
+        required: true
+        default: false
+        type: boolean
+permissions: {}
+concurrency:
+  group: meta-account-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: ${{ github.repository == 'unifesspa-ascom/metricas' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.confirm_read_only == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+        working-directory: diagnostic
+    steps:
+      - name: Checkout exclusivo do commit revisado
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: unifesspa-ascom/metricas
+          ref: b4b4cc205dddef5c0f5bd4112f43c7d03a523209
+          path: diagnostic
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/diagnose_facebook_errors.py
+            /scripts/update_metrics.py
+            /tests/test_diagnose_facebook_errors.py
+      - name: Verificar SHA e integridade antes dos testes
+        run: |
+          test "$(git rev-parse HEAD)" = 'b4b4cc205dddef5c0f5bd4112f43c7d03a523209'
+          sha256sum --check --status <<'SHA256'
+          198f6992cffdfe0fca231cc6b36f53a510b28cb03e89dc6a23f87cf9080f2963  scripts/diagnose_facebook_errors.py
+          986558b09521b7a8c04f4e488ef52293fbc5234acc582f0cc3b72373bca4c4f8  tests/test_diagnose_facebook_errors.py
+          c3c64677b0f4f52f24c5d7060032ce4dc8f112c035eb43329f4d4eb9777729bf  scripts/update_metrics.py
+          SHA256
+      - name: Testes offline sem secret
+        run: /usr/bin/python3 -I -S -B -m unittest discover -s tests -p test_diagnose_facebook_errors.py -v
+      - name: Preflight sem secret e sem rede
+        run: /usr/bin/python3 -I -S -B scripts/diagnose_facebook_errors.py
+      - name: Verificar ausencia de alteracoes antes de liberar o secret
+        run: |
+          git diff --quiet HEAD --
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Diagnostico GET com secret somente neste passo
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+        run: exec /usr/bin/python3 -I -S -B scripts/diagnose_facebook_errors.py --execute-read-only
