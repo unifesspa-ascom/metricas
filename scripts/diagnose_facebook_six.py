@@ -92,7 +92,8 @@ def observation(client, page, metric, since, until):
         # Never emit str(error) directly, including unexpected categories.
         category = str(error)
         if category in ('http_error', 'redirect_blocked', 'api_error',
-                        'response_too_large', 'incomplete_response', 'request_budget_exhausted'):
+                        'response_too_large', 'invalid_paging', 'pagination_pending',
+                        'request_budget_exhausted'):
             result['status'] = category
         elif category == 'invalid_value':
             result['status'] = 'invalid_values'

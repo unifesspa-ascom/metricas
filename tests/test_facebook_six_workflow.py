@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -107,8 +108,15 @@ class FacebookWorkflow(unittest.TestCase):
         code = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
         env = dict(os.environ, DIAGNOSTIC_DAY='2026-01-01', PYTHONDONTWRITEBYTECODE='1')
         env.pop('FB_PAGE_ACCESS_TOKEN', None); env.pop('FB_PAGE_ID', None)
-        result = subprocess.run([sys.executable, '-I', '-B', '-c', code], cwd=ROOT, env=env,
-                                capture_output=True, timeout=40)
+        # The unchanged launcher tests its pinned commit, not this working tree.
+        # Recreate that checkout so current diagnostic changes cannot leak into it.
+        with tempfile.TemporaryDirectory(prefix='facebook-pinned-preflight-') as folder:
+            for name in FILES:
+                target = Path(folder, name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(subprocess.check_output(['git', 'show', PIN + ':' + name], cwd=ROOT))
+            result = subprocess.run([sys.executable, '-I', '-B', '-c', code], cwd=folder, env=env,
+                                    capture_output=True, timeout=40)
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors='replace'))
         self.assertIn('Ran 115 tests', result.stderr.decode(errors='replace'))
 

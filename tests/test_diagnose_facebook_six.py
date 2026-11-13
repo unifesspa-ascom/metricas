@@ -100,7 +100,7 @@ class SixRequestDiagnostic(unittest.TestCase):
         ]
         report = self.execute()
         self.assertEqual([r['status'] for r in report['results']],
-                         ['http_error', 'redirect_blocked', 'incomplete_response',
+                         ['http_error', 'redirect_blocked', 'pagination_pending',
                           'api_error', 'invalid_structure', 'no_data'])
         self.assertEqual(self.opener.open.call_count, 6)
         body.read.assert_not_called()
@@ -177,6 +177,18 @@ class SixRequestDiagnostic(unittest.TestCase):
         client.get.side_effect = d.fb.MetricError(RAW)
         report = d.observation(client, PAGE, d.PLANNED_METRICS[0], DAY, '2026-01-02')
         self.assertEqual(report['status'], 'invalid_structure')
+        self.assertNotIn(RAW, json.dumps(report))
+
+    def test_malformed_paging_is_explicit_and_never_followed_or_logged(self):
+        bodies = [payload(metric) for metric in d.PLANNED_METRICS]
+        for body, paging in zip(bodies, (None, RAW, [], {'next': None}, {'next': False}, {'next': {}})):
+            body['paging'] = paging
+        self.opener.open.side_effect = [response(body) for body in bodies]
+        report = self.execute()
+        self.assertEqual({row['status'] for row in report['results']}, {'invalid_paging'})
+        self.assertEqual(report['attempts'], 6)
+        self.assertEqual(self.opener.open.call_count, 6)
+        self.assertTrue(all(row['metric_approved'] is False for row in report['results']))
         self.assertNotIn(RAW, json.dumps(report))
 
     def test_six_http_failures_share_budget_and_do_not_restart(self):

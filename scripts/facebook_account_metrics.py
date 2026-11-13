@@ -93,7 +93,14 @@ def parse_observations(payload, metric):
     require(metric in METRICS.values(), 'unknown_metric')
     require(isinstance(payload, dict) and 'error' not in payload, 'invalid_response')
     paging = payload.get('paging', {})
-    require(isinstance(paging, dict) and not paging.get('next'), 'incomplete_response')
+    require(isinstance(paging, dict), 'invalid_paging')
+    if 'next' in paging:
+        following = paging['next']
+        require(isinstance(following, str) and bool(following.strip()), 'invalid_paging')
+        # A next link may navigate time rather than continue the requested data.
+        # Its semantics remain unreviewed: reject without claiming incompleteness,
+        # following the link, or accepting any partial observations.
+        raise MetricError('pagination_pending')
     require('data' in payload and isinstance(payload['data'], list), 'invalid_data')
     if not payload['data']:
         return []

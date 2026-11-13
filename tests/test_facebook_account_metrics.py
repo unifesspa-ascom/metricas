@@ -77,6 +77,18 @@ class FacebookContracts(unittest.TestCase):
         for data in variants:
             with self.assertRaises(fb.MetricError): fb.parse_observations(data, METRIC)
 
+    def test_pending_navigation_never_returns_partial_series_or_certifies_incompleteness(self):
+        client = Mock()
+        def get(page, metric, since, until):
+            body = payload(0, metric=metric)
+            body['paging'] = {'next': SECRET}
+            return body
+        client.get.side_effect = get
+        series, statuses = fb.collect_series(client, '123', START, END, day_zone='America/Sao_Paulo')
+        self.assertTrue(all(days == {} for days in series.values()))
+        self.assertEqual(set(statuses.values()), {'pagination_pending'})
+        self.assertEqual(client.get.call_count, 6)
+
     def test_timestamp_must_be_real_aware_and_unique(self):
         for stamp in ('2026-11-13', '2026-11-13T00:00:00', '2026-02-30T00:00:00Z',
                       '2026-11-13T00:00:00Z\n', None, SECRET):
