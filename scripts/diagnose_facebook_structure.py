@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""One authorized Facebook GET, structure only, fixed closed day 2026-11-12.
+"""One authorized Facebook GET, diagnostic only, fixed closed day 2026-11-12.
 
-Never follows or interprets links, maps days, approves metrics, or writes data.
+Never follows links, maps days, approves metrics, or writes data.
+Navigation classification and observation validation never establish coverage.
 Credentials only from the process environment; never pass them as arguments.
 """
 import sys
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 
 import facebook_account_metrics as fb
 from account_metrics_safety import CollectionError, decode
+from facebook_navigation_validation import classify_navigation, validate_observation
 
 METRIC = 'page_media_view'
 SINCE, UNTIL = '2026-11-12', '2026-11-13'
@@ -81,6 +83,34 @@ def summarize(payload):
     return ('structure_valid_navigation_pending' if next_present else 'structure_valid'), metadata
 
 
+def inspect_response(payload, *, page, token):
+    """Independent, sanitized analyses; never return links or observations.
+
+    Navigation candidates do not unblock publication or establish daily coverage.
+    All results are built before updating the execution report, so unexpected
+    validation failures cannot leave a partially successful result behind.
+    """
+    status, structure = summarize(payload)
+    paging = payload.get('paging', {}) if isinstance(payload, dict) else None
+    navigation = classify_navigation(paging, page=page, since=SINCE, until=UNTIL, expected_token=token)
+    observation = validate_observation(payload, since=SINCE, until=UNTIL)
+    if status != 'malformed_response':
+        if observation['status'] == 'invalid_observation':
+            status = 'invalid_observation'
+        elif observation['status'] == 'missing_observation':
+            status = 'missing_observation'
+        elif paging:
+            # Includes previous-only, cursor metadata and unknown navigation.
+            status = 'structure_valid_navigation_pending'
+    return {'status': status, 'structure': structure, 'navigation': navigation, 'observation': observation}
+
+
+def _empty_report(status='internal_error'):
+    return {'status': status, 'attempts': 0, 'structure': None, 'navigation': None, 'observation': None,
+            'publication_enabled': False, 'navigation_approved': False, 'metric_approved': False,
+            'day_assigned': False, 'coverage': 'unverified', 'temporal_policy': 'pending'}
+
+
 class StrictResponse:
     def __init__(self, response):
         self.response = response
@@ -134,17 +164,17 @@ class Execution:
         page = os.environ.get('FB_PAGE_ID')
         if not isinstance(page, str) or not re.fullmatch(r'[0-9]{1,32}', page):
             raise DiagnosticError('invalid_credentials')
+        token = os.environ.get('FB_PAGE_ACCESS_TOKEN')
         try:
-            client = fb.Client(os.environ.get('FB_PAGE_ACCESS_TOKEN'))
+            client = fb.Client(token)
         except fb.MetricError:
             raise DiagnosticError('invalid_credentials') from None
         budget = OneGetOpener(client.opener)
         client.opener = budget
-        report = {'status': 'internal_error', 'attempts': 0, 'structure': None,
-                  'publication_enabled': False, 'metric_approved': False, 'temporal_policy': 'pending'}
+        report = _empty_report()
         try:
             payload = client.get(page, METRIC, SINCE, UNTIL)
-            report['status'], report['structure'] = summarize(payload)
+            report.update(inspect_response(payload, page=page, token=token))
         except fb.MetricError as error:
             category = str(error)
             if category in ('http_error', 'redirect_blocked', 'api_error', 'request_budget_exhausted'):
@@ -174,13 +204,11 @@ def main(argv=None):
         category = str(error)
         allowed = {'explicit_authorization_required', 'execution_already_used',
                    'day_not_closed', 'invalid_credentials', 'invalid_arguments'}
-        report = {'status': category if category in allowed else 'internal_error',
-                  'attempts': 0, 'publication_enabled': False, 'metric_approved': False,
-                  'temporal_policy': 'pending', 'structure': None}
+        report = _empty_report(category if category in allowed else 'internal_error')
     except Exception:
-        report = {'status': 'internal_error', 'attempts': 0, 'publication_enabled': False,
-                  'metric_approved': False, 'temporal_policy': 'pending', 'structure': None}
+        report = _empty_report()
     print(json.dumps(report, allow_nan=False))
+    # Exit zero means diagnostic inspection succeeded, never metric/day approval.
     return 0 if report['status'] in ('structure_valid', 'structure_valid_navigation_pending') else 1
 
 
