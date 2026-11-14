@@ -681,6 +681,25 @@
       "finished_at": "2026-11-14T17:59:03.275793+00:00",
       "requests_used": 2,
       "issues": []
+    },
+    {
+      "id": "1935f0d286894e53a52f617b83f527ff",
+      "api_version": "v21.0",
+      "started_at": "2026-11-14T22:22:05.356439+00:00",
+      "listing_status": "complete",
+      "pagination_status": "exhausted",
+      "pages_received": 1,
+      "distinct_stories_observed": 0,
+      "duplicates": 0,
+      "invalid_records": 0,
+      "conflicting_timestamps": 0,
+      "request_limit": 100,
+      "page_limit": 5,
+      "insights_status": "not_needed",
+      "status": "complete",
+      "finished_at": "2026-11-14T22:22:06.071459+00:00",
+      "requests_used": 2,
+      "issues": []
     }
   ]
 }
