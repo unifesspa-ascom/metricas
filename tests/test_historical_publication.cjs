@@ -9,3 +9,15 @@ class FixedDate extends Date{constructor(...args){super(...(args.length?args:['2
 const context={module:{exports:{}},document:{currentScript:{src:'https://unifesspa-ascom.github.io/metricas/historico/app.js'},body:{dataset:{}},getElementById:get,querySelectorAll:()=>[]},window:{innerWidth:1280,addEventListener(){}},Date:FixedDate,Intl,URL,setTimeout,clearTimeout,console,fetch:async url=>{requested.push(url);return {ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(root,'historico/data',new URL(url).pathname.split('/').at(-1)),'utf8'))};}};
 vm.runInNewContext(fs.readFileSync(path.join(root,'historico/app.js'),'utf8'),context);await new Promise(resolve=>setImmediate(resolve));assert.equal(requested.length,6);assert.ok(requested.every(url=>url.startsWith('https://unifesspa-ascom.github.io/metricas/historico/data/')));assert.ok(!requested.some(url=>url.includes('/dados/')));assert.equal(context.module.exports.historicalAsset('assets/unifesspa.png'),'https://unifesspa-ascom.github.io/metricas/historico/assets/unifesspa.png');assert.match(get('period-status').innerHTML,/Em andamento/);assert.equal((get('content').innerHTML.match(/class="stat-value">n\/d/g)||[]).length,4);});
 test('legacy interface stays at a root-level URL and its regressions target the backup',()=>{const html=fs.readFileSync(path.join(root,'painel-anterior.html'),'utf8'),legacyTest=fs.readFileSync(path.join(root,'tests/test_post_rankings.cjs'),'utf8');assert.match(html,/dados\/posts\.json/);assert.match(html,/dados\/stories\.json/);assert.match(legacyTest,/path\.join\(__dirname, '\.\.', 'painel-anterior\.html'\)/);});
+
+test('approved homepage uses shared published data with isolated interface scripts and no preview dependency',()=>{
+ const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+ assert.match(html,/historico\/interface\/app.js/);
+ assert.match(html,/data-data-root="..\/data\/"/);
+ assert.match(html,/data-assets-root="..\/assets\/"/);
+ assert.ok(!html.includes('teste-usabilidade'));
+ const base=new URL('historico/interface/app.js','https://unifesspa-ascom.github.io/metricas/');
+ assert.equal(new URL('manifest.json',new URL('../data/',base)).href,'https://unifesspa-ascom.github.io/metricas/historico/data/manifest.json');
+ assert.equal(new URL('unifesspa.png',new URL('../assets/',base)).href,'https://unifesspa-ascom.github.io/metricas/historico/assets/unifesspa.png');
+ assert.ok(fs.existsSync(path.join(root,'historico/index.html')));
+});
