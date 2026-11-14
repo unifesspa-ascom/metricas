@@ -1,0 +1,124 @@
+name: Facebook integrated diagnostic (one GET, reviewed commit)
+'on':
+  workflow_dispatch:
+    inputs:
+      confirm_read_only:
+        description: 'Autorizo no maximo 1 GET Facebook, dia 2026-11-12, sem publicar dados'
+        required: true
+        default: false
+        type: boolean
+permissions: {}
+concurrency:
+  group: meta-account-diagnostic
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    if: ${{ github.repository == 'unifesspa-ascom/metricas' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && inputs.confirm_read_only == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+    defaults:
+      run:
+        shell: bash --noprofile --norc -euo pipefail {0}
+        working-directory: diagnostic
+    steps:
+      - name: Checkout exclusivo do commit revisado
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: unifesspa-ascom/metricas
+          ref: a94e11b1772190aca47b6caabd396673d1d997b4
+          path: diagnostic
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+          lfs: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /scripts/diagnose_facebook_structure.py
+            /scripts/facebook_navigation_validation.py
+            /scripts/facebook_account_metrics.py
+            /scripts/account_metrics_safety.py
+            /scripts/update_metrics.py
+            /scripts/backfill_metrics.py
+            /tests/test_diagnose_facebook_structure.py
+            /tests/test_facebook_navigation_validation.py
+            /tests/test_facebook_integrated_diagnostic.py
+            /tests/test_facebook_account_metrics.py
+            /tests/test_account_metrics_safety.py
+      - name: Verificar SHA e hashes antes de executar codigo
+        run: &integrity |
+          test "$(git rev-parse HEAD)" = 'a94e11b1772190aca47b6caabd396673d1d997b4'
+          sha256sum --check --status <<'SHA256'
+          2552ec0a8df31ecfec13c1f0d9cfac6ea1cf9fcf380b13e0fc5009c5d53fbac0  scripts/diagnose_facebook_structure.py
+          0611a1fbf77b2023ece328fa948303e3f720aab1a868ef817ac399e865b02525  scripts/facebook_navigation_validation.py
+          2437a51c690f73b8a378457fb60a3474bffa83d8f64307b25adbf84625f7cdbe  scripts/facebook_account_metrics.py
+          1685d0eae985cef2901d58b7d0d7c8f54a22a3ceb63e9c56e868f9625d908171  scripts/account_metrics_safety.py
+          e28e6e539725c71f4d4b034ac31d2d7a9bb02ff90dd743adc54bbf2fe4dce2b9  scripts/update_metrics.py
+          c9c50ab7a48bce0da1e53b5d8b1a9473eefd071566ce3ad93720fe780d1a50f3  scripts/backfill_metrics.py
+          aa52a4d8a6dff7d4a16dbbcb865a62ecbc2ddb88195b5f9a20f85adfeba949e0  tests/test_diagnose_facebook_structure.py
+          3bee57e24c18fcdd7c8b8ae431eb71ab3f9066fbf79778f68fcf2248ccc8e23e  tests/test_facebook_navigation_validation.py
+          bd67210805dfe088238b62da04ce74aa804eb0a52ba0f0f7c7ef3791e71bd1fe  tests/test_facebook_integrated_diagnostic.py
+          f0dfc5e512481cde7f6feae239e2d73f27f9b6f9f5c5ce604b795feae471a5ba  tests/test_facebook_account_metrics.py
+          07ea148b4451950738036c834f328f68e572ee17360e9024bdc0ed27f81a953a  tests/test_account_metrics_safety.py
+          SHA256
+          git diff --quiet HEAD --
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Preparar dependencias sem secrets
+        run: |
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/facebook-integrated-venv"
+          "$RUNNER_TEMP/facebook-integrated-venv/bin/python" -B -m pip --isolated --disable-pip-version-check install --index-url https://pypi.org/simple --only-binary=:all: --no-cache-dir --retries 0 --timeout 20 requests==2.32.5 urllib3==2.6.3 certifi==2025.10.5 charset-normalizer==3.4.4 idna==3.11
+      - name: Testes offline e preflight sem secrets
+        run: |
+          "$RUNNER_TEMP/facebook-integrated-venv/bin/python" -I -B - <<'PY'
+          import contextlib, io, json, os, socket, sys, unittest
+          from pathlib import Path
+          def denied(*args, **kwargs):
+              raise AssertionError('offline: network forbidden')
+          socket.socket.connect = denied
+          socket.socket.connect_ex = denied
+          socket.socket.sendto = denied
+          socket.create_connection = denied
+          socket.getaddrinfo = denied
+          assert 'FB_PAGE_ACCESS_TOKEN' not in os.environ
+          assert 'FB_PAGE_ID' not in os.environ
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          patterns = ('test_diagnose_facebook_structure.py', 'test_facebook_navigation_validation.py', 'test_facebook_integrated_diagnostic.py', 'test_facebook_account_metrics.py', 'test_account_metrics_safety.py')
+          suite = unittest.TestSuite(unittest.defaultTestLoader.discover('tests', pattern=p) for p in patterns)
+          result = unittest.TextTestRunner().run(suite)
+          if not result.wasSuccessful() or result.testsRun != 174:
+              raise SystemExit(1)
+          import diagnose_facebook_structure as diagnostic
+          assert diagnostic.METRIC == 'page_media_view'
+          assert (diagnostic.SINCE, diagnostic.UNTIL) == ('2026-11-12', '2026-11-13')
+          assert diagnostic.MAX_COUNT == 1000
+          assert diagnostic.fb.APPROVED_DAY_ZONE is None
+          assert diagnostic.fb.PUBLICATION_ENABLED is False
+          assert diagnostic.date.fromisoformat(diagnostic.UNTIL) <= diagnostic.datetime.now(diagnostic.ZoneInfo('America/Sao_Paulo')).date()
+          output = io.StringIO()
+          with contextlib.redirect_stdout(output):
+              code = diagnostic.main([])
+          report = json.loads(output.getvalue())
+          assert code == 1 and report['status'] == 'explicit_authorization_required'
+          assert report['attempts'] == 0 and report['publication_enabled'] is False
+          assert report['navigation_approved'] is False and report['metric_approved'] is False
+          assert report['day_assigned'] is False and report['coverage'] == 'unverified'
+          assert report['temporal_policy'] == 'pending'
+          PY
+      - name: Revalidar integridade antes de liberar secrets
+        run: *integrity
+      - name: Diagnostico integrado de um GET com secrets somente neste passo
+        env:
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+        run: |
+          "$RUNNER_TEMP/facebook-integrated-venv/bin/python" -I -B - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, str(Path('scripts').resolve()))
+          import diagnose_facebook_structure as diagnostic
+          sys.exit(diagnostic.main(['--authorize-one-get']))
+          PY
