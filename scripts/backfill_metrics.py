@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Backfill de métricas diárias de conta para um ano completo.
+Backfill de conta SUSPENSO. CLI bloqueada antes de consultas/gravacoes.
+A funcao Facebook permanece disponivel apenas como candidato para testes.
 
 Percorre o ano mês a mês (a API limita janelas a ~90 dias por chamada),
 coleta métricas de perfil do Facebook e do Instagram e preenche o arquivo
@@ -38,6 +39,7 @@ import json
 import sys
 import time
 import requests
+from facebook_account_metrics import Client as FacebookClient, METRICS as FB_METRICS, collect_series
 from datetime import date, timedelta, datetime, timezone
 
 API_VERSION = "v21.0"
@@ -55,19 +57,9 @@ TRI_LABELS = {1: "1º tri", 2: "2º tri", 3: "3º tri", 4: "4º tri"}
 
 # --- Métricas a coletar (mesmo conjunto de update_metrics.py) ---
 
-FB_METRICS = {
-    "visualizadores": "page_total_media_view_unique",
-    "visualizacoes":  "page_media_view",
-    "interacoes":     "page_post_engagements",
-    "cliques":        "page_total_actions",
-    "seguidores":     "page_daily_follows_unique",
-    "visitas":        "page_views_total",
-}
+# Facebook metric names come from the shared contract; none is a fallback.
 
-FB_METRICS_FALLBACK = {
-    "page_total_media_view_unique": "page_impressions_unique",
-    "page_media_view":              "page_impressions",
-}
+# No automatic metric substitution is permitted.
 
 # Métricas IG com suporte a period=day em v21 — série diária via "values"
 # impressions, profile_views, website_clicks e follower_count foram removidas:
@@ -192,48 +184,13 @@ def get_ig_user_id() -> str:
     return ig["id"]
 
 
-def fetch_fb_insights_month(since: str, until_: str) -> dict:
-    """
-    Coleta métricas diárias do Facebook para o mês [since, until_).
-    Retorna dict: {json_key: {date_brt: value}}.
-    """
-    result = {k: {} for k in FB_METRICS}
-
-    for json_key, metric_name in FB_METRICS.items():
-        fetched = False
-        for name in [metric_name, FB_METRICS_FALLBACK.get(metric_name)]:
-            if name is None:
-                continue
-            try:
-                data = api_get(
-                    f"{BASE_URL}/{PAGE_ID}/insights/{name}/day",
-                    params={"since": since, "until": until_, "access_token": TOKEN},
-                )
-                # A resposta pode ter paginação; precisamos de todos os dias do mês
-                while data:
-                    for entry in data.get("data", []):
-                        for val in entry.get("values", []):
-                            day = utc_to_brt_date(val.get("end_time", ""))
-                            if day and day >= since and day < until_:
-                                result[json_key][day] = val.get("value", 0)
-                    next_url = data.get("paging", {}).get("next")
-                    if not next_url:
-                        break
-                    data = api_get(next_url, {})
-                fetched = True
-                if name != metric_name:
-                    print(f"    FB {json_key}: usando '{name}' (fallback de '{metric_name}')",
-                          file=sys.stderr)
-                break
-            except Exception as e:
-                print(f"    AVISO FB {json_key} ({name}): {e}", file=sys.stderr)
-
-        if not fetched:
-            print(f"    AVISO FB {json_key}: todas as tentativas falharam para {since}",
-                  file=sys.stderr)
-        time.sleep(0.3)
-
-    return result
+def fetch_fb_insights_month(since: str, until_: str, *, day_zone=None) -> dict:
+    """Pure collection candidate only; the backfill CLI remains disabled."""
+    client = FacebookClient(TOKEN)
+    series, statuses = collect_series(client, PAGE_ID, since, until_, day_zone=day_zone)
+    for key, status in statuses.items():
+        print(f"  FB {key}: {status}")
+    return series
 
 
 def count_fb_publications_month(since: str, until_: str) -> tuple[dict, dict]:
@@ -488,6 +445,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Exibe o que seria coletado sem gravar no JSON")
     args = parser.parse_args()
+    parser.error("account_backfill_suspended: nenhuma consulta ou gravacao autorizada")
 
     # Resolve intervalo de datas
     if (args.start is None) != (args.end is None):
