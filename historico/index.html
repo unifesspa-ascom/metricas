@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Métricas das redes sociais · Histórico ASCOM Unifesspa</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="reports.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#content">Pular para o painel</a>
+  <header class="top">
+    <div class="wrap">
+      <div class="top-in">
+        <div class="brand"><img src="assets/unifesspa.png" alt="Unifesspa — Assessoria de Comunicação"><div><h1>Métricas das redes sociais</h1><p>Histórico institucional · 2024–2026 · Versão de teste</p></div></div>
+        <div class="header-actions"><button class="button" id="btnRel" type="button">Relatório detalhado</button><button class="button primary" id="btnExec" type="button">Relatório executivo</button><button class="button" id="btnPrint" type="button" aria-label="Imprimir a visualização atual">Imprimir / PDF</button></div>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Rede social" id="tabs"></div>
+    </div>
+  </header>
+  <main class="wrap">
+    <section class="page-heading"><h2 id="page-title">Panorama do período</h2></section>
+    <section class="period-controls" aria-label="Seleção de ano e período"><label for="year-select">Ano <select id="year-select"></select></label><label for="period-select">Período <select id="period-select"></select></label></section>
+    <section id="period-status" class="period-status" aria-label="Referência e atualização" aria-live="polite"></section>
+    <div id="content" role="tabpanel" tabindex="-1"><div class="loading">Preparando a base histórica…</div></div>
+    <footer class="footer"><span>Assessoria de Comunicação · UNIFESSPA</span></footer>
+  </main>
+  <noscript>Ative o JavaScript para explorar os dados históricos. Os documentos também estão disponíveis na pasta data.</noscript>
+</body>
+</html>

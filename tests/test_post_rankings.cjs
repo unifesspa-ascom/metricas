@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '..', 'painel-anterior.html'), 'utf8');
 const source = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 new vm.Script(source); // Parse the complete production script, including bootstrap.
 const bootstrap = source.lastIndexOf('\nloadData(function(){');

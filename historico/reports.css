@@ -1,0 +1,105 @@
+/* Relatórios da prévia. Nenhuma regra de apresentação do dashboard é alterada. */
+.pdf-report{--pdf-accent:#1877f2;--pdf-secondary:#81b3f6;--pdf-tint:#edf4ff;--pdf-ink:#182b3a;--pdf-muted:#596774;--pdf-line:#dce3e9;color:var(--pdf-ink);font-family:Montserrat,'Segoe UI',Arial,sans-serif;max-width:860px;margin:20px auto}
+.pdf-report[data-report-network=instagram]{--pdf-accent:#c12680;--pdf-secondary:#e699c5;--pdf-tint:#fbedf5}
+.pdf-report *{box-sizing:border-box}
+.pdf-report,.pdf-report *{box-shadow:none;backdrop-filter:none;filter:none;background-image:none;opacity:1}
+.pdf-report .pdf-page{background:#fff;padding:28px 32px;margin:0 0 24px;box-shadow:none;border-radius:8px}
+.pdf-report .pdf-header{display:flex;align-items:center;gap:17px;padding:0 0 16px;border-bottom:2px solid var(--pdf-accent);margin-bottom:8mm}
+.pdf-report .pdf-logo{width:91px;height:auto;max-height:54px;object-fit:contain}
+.pdf-report .pdf-header-main{flex:1;min-width:0}
+.pdf-report .pdf-institution{margin:0 0 5px;font-size:9px;font-weight:700;letter-spacing:1.1px;color:#52735f}
+.pdf-report .pdf-header h1{font-size:26px;line-height:1.15;margin:0 0 7px;letter-spacing:-.7px;font-weight:800;color:var(--pdf-accent)}
+.pdf-report .pdf-header h1 span{font-size:15px;font-weight:600;letter-spacing:-.2px;color:var(--pdf-ink)}
+.pdf-report .pdf-period{font-size:12px;font-weight:650;margin:0;color:var(--pdf-ink)}
+.pdf-report .pdf-period span{display:block;font-size:10px;font-weight:400;color:var(--pdf-muted);margin-top:4px}
+.pdf-report .pdf-kind{align-self:flex-start;text-align:right;font-size:9px;font-weight:700;letter-spacing:.7px;color:var(--pdf-muted);padding-top:4px;white-space:nowrap}
+.pdf-report .pdf-kind small{font-size:9px;font-weight:400;letter-spacing:0;display:block;margin-top:6px}
+.pdf-report .pdf-inventory{color:var(--pdf-ink)}
+.pdf-report .pdf-inventory span{display:block;margin-top:3px}
+.pdf-report .pdf-availability{font-size:11px;margin:0 0 12px;color:var(--pdf-muted)}
+.pdf-report .pdf-alert{background:#fff6e7;border-left:3px solid #d9a341;padding:9px 12px;font-size:11px;margin:0 0 16px}
+.pdf-report .pdf-kpis{display:grid;gap:5mm;border:0;border-radius:0;overflow:visible;margin:0 0 8mm;background:#fff}
+.pdf-report .pdf-kpis-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pdf-report .pdf-kpis-4{grid-template-columns:minmax(0,1.2fr) minmax(0,1.5fr) minmax(0,1.1fr) minmax(0,1.4fr)}
+.pdf-report .pdf-kpi{padding:17px 16px 14px;border:1px solid var(--pdf-line);border-radius:7px;min-width:0;background:#f8fafc}
+.pdf-report .pdf-kpi-label{font-size:11px;font-weight:600;display:block;color:var(--pdf-muted);min-height:30px;line-height:1.35}
+.pdf-report .pdf-kpi strong{font-size:28px;font-weight:800;letter-spacing:-.8px;line-height:1.2;display:block;font-variant-numeric:tabular-nums;color:var(--pdf-ink);margin:3px 0 8px;white-space:nowrap}
+.pdf-report .pdf-kpi small{display:block;font-size:9px;color:var(--pdf-muted);line-height:1.4;min-height:25px}
+.pdf-report .pdf-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:0 0 4mm}
+.pdf-report .pdf-section-heading h2{font-size:14px;font-weight:750;margin:0;letter-spacing:-.2px}
+.pdf-report .pdf-section-heading>span{font-size:10px;color:var(--pdf-muted);text-align:right}
+.pdf-report .pdf-trend{margin:0 0 8mm}
+.pdf-report .pdf-chart{width:100%;height:auto;display:block;max-height:180px}
+.pdf-report .pdf-chart-legend{display:flex;gap:18px;justify-content:center;font-size:10px;margin:4px 0}
+.pdf-report .pdf-chart-legend span{display:flex;align-items:center;gap:6px}
+.pdf-report .pdf-chart-legend i{width:9px;height:9px;border-radius:2px}
+.pdf-report .pdf-monthly{margin:0 0 8mm}
+.pdf-report .pdf-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:11px;margin:0;min-width:0}
+.pdf-report .pdf-table th,.pdf-report .pdf-table td{padding:8px 9px;border:0;border-bottom:1px solid var(--pdf-line);background:#fff;vertical-align:top;text-align:left;font-size:11px;line-height:1.4;color:var(--pdf-ink);white-space:normal;overflow-wrap:break-word}
+.pdf-report .pdf-table thead th{background:#f3f5f7;color:#475569;font-weight:650;font-size:10px;vertical-align:bottom;border-top:1px solid var(--pdf-line)}
+.pdf-report .pdf-month-table th:first-child{width:13%;font-weight:600}
+.pdf-report .pdf-table .pdf-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pdf-report .pdf-table thead .pdf-num{white-space:normal}
+.pdf-report .pdf-table tfoot th,.pdf-report .pdf-table tfoot td{font-weight:750;background:var(--pdf-tint);border-top:1px solid var(--pdf-line)}
+.pdf-report .pdf-ranking{margin:0 0 16px}
+.pdf-report .pdf-rank-table .pdf-num{font-weight:700}
+.pdf-report .pdf-date{font-size:10px!important;white-space:nowrap!important;color:var(--pdf-muted)!important}
+.pdf-report .pdf-post-title{font-size:11px;line-height:1.45;color:var(--pdf-ink);font-weight:500;text-decoration:none;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.pdf-report .pdf-group-row th{color:var(--pdf-accent);background:var(--pdf-tint);font-weight:700;padding-top:6px;padding-bottom:6px}
+.pdf-report .pdf-formats{font-size:10px;color:var(--pdf-muted);margin:0 0 18px;line-height:1.4}
+.pdf-report .pdf-note{display:block;font-size:9px;line-height:1.5;color:var(--pdf-muted);padding-top:10px;border-top:1px solid var(--pdf-line);margin:18px 0 0}
+.pdf-report .pdf-partial{font-size:9px;color:var(--pdf-muted)}
+.pdf-report .pdf-empty{font-size:12px;color:var(--pdf-muted);padding:12px 0;margin:0 0 16px}
+@media screen and (max-width:650px){.pdf-report .pdf-page{padding:18px 14px}.pdf-report .pdf-header{flex-wrap:wrap;gap:12px}.pdf-report .pdf-logo{width:65px}.pdf-report .pdf-header h1{font-size:23px}.pdf-report .pdf-kind{width:100%;text-align:left}.pdf-report .pdf-kind small{display:inline;margin-left:10px}.pdf-report .pdf-kpis-4{grid-template-columns:repeat(2,minmax(0,1fr))}.pdf-report .pdf-kpis-3{grid-template-columns:1fr}.pdf-report .pdf-kpi{border-bottom:1px solid var(--pdf-line)}.pdf-report .pdf-kpi-label{min-height:0}.pdf-report .pdf-kpi small{min-height:0}.pdf-report .pdf-kpi strong{font-size:24px}.pdf-report .pdf-section-heading{align-items:flex-start;flex-wrap:wrap}.pdf-report .pdf-table th,.pdf-report .pdf-table td{font-size:9px;padding:6px 3px}.pdf-report .pdf-post-title{font-size:10px}.pdf-report .pdf-date{font-size:8px!important}.pdf-report .pdf-month-table th:first-child{width:16%}}
+@page{size:A4;margin:15mm 18mm}
+@media print{
+ body[data-view=reports]>header.top,body[data-view=executive]>header.top,
+ body[data-view=reports] .page-heading,body[data-view=executive] .page-heading,
+ body[data-view=reports] .period-controls,body[data-view=executive] .period-controls,
+ body[data-view=reports] .period-status,body[data-view=executive] .period-status{display:none!important}
+ body[data-view=reports] main.wrap,body[data-view=executive] main.wrap{padding:0!important;width:100%;max-width:174mm;margin:0 auto}
+ .pdf-report{max-width:174mm;width:100%;margin:0;background:#fff;color:#182b3a;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+ .pdf-report .pdf-page{width:100%;max-width:174mm;padding:0;margin:0;border:0;border-radius:0;box-shadow:none!important;break-after:auto}
+ .pdf-report .pdf-page+.pdf-page{break-before:page;page-break-before:always}
+ .pdf-report .pdf-header{padding-bottom:10px;margin-bottom:8mm;gap:14px;break-inside:avoid}
+ .pdf-report .pdf-logo{width:24mm;max-height:15mm}
+ .pdf-report .pdf-institution{font-size:7pt}
+ .pdf-report .pdf-header h1{font-size:20pt}
+ .pdf-report .pdf-header h1 span{font-size:12pt}
+ .pdf-report .pdf-period{font-size:9pt}.pdf-report .pdf-period span{font-size:7.5pt}
+ .pdf-report .pdf-period span{display:inline;margin:0 0 0 6px}
+ .pdf-report .pdf-kind,.pdf-report .pdf-kind small{font-size:7pt}
+ .pdf-report .pdf-kpis{margin-bottom:8mm;gap:5mm;break-inside:avoid;border-radius:0}
+ .pdf-report .pdf-kpi{padding:12px 13px 10px}
+ .pdf-report .pdf-kpi-label{font-size:8.5pt;min-height:0}
+ .pdf-report .pdf-kpi strong{font-size:22pt;margin:3px 0 6px}
+ .pdf-report .pdf-kpi small{font-size:7pt;min-height:0}
+ .pdf-report .pdf-kpis-4 .pdf-kpi strong{font-size:18pt;letter-spacing:-.6px}
+ .pdf-report .pdf-section-heading{margin-bottom:3mm;break-after:avoid}
+ .pdf-report .pdf-section-heading h2{font-size:11pt}.pdf-report .pdf-section-heading>span{font-size:8pt}
+ .pdf-report .pdf-trend{margin-bottom:8mm;break-inside:avoid}
+ .pdf-report .pdf-chart{width:100%;max-height:35mm;min-height:0}
+ .pdf-report .pdf-chart text{font-size:14px}
+ .pdf-report .pdf-chart-legend{font-size:7.5pt}
+ .pdf-report .pdf-monthly{margin-bottom:8mm;break-inside:avoid}
+ .pdf-report .pdf-table th,.pdf-report .pdf-table td{padding:6px 6px!important;font-size:8.5pt!important;line-height:1.4;word-break:normal;overflow-wrap:normal}
+ .pdf-report .pdf-table thead th{font-size:8pt!important}
+ .pdf-report .pdf-table .pdf-num{white-space:nowrap!important}
+ .pdf-report .pdf-table thead .pdf-num{white-space:normal!important}
+ .pdf-report .pdf-table thead{display:table-header-group}
+ .pdf-report .pdf-table tfoot{display:table-row-group}
+ .pdf-report .pdf-table tr{break-inside:avoid;page-break-inside:avoid}
+ .pdf-report .pdf-ranking{break-inside:auto;margin-bottom:12px}
+ .pdf-report .pdf-table tbody tr:nth-last-child(2){break-after:avoid}
+ .pdf-report .pdf-table .pdf-group-row{break-after:avoid}
+ .pdf-report .pdf-post-title{font-size:8.5pt;line-height:1.45;-webkit-line-clamp:2}
+ .pdf-report .pdf-date{font-size:8pt!important}
+ .pdf-report .pdf-note{display:block!important;font-size:7.5pt;line-height:1.45;margin-top:13px;padding-top:8px;break-inside:avoid}
+ .pdf-report .pdf-formats{font-size:8pt;margin:0 0 13px;break-inside:avoid}
+ .pdf-report .pdf-detailed .pdf-formats{margin-bottom:2mm}
+ .pdf-report .pdf-detailed .pdf-ranking{margin-bottom:0}
+ .pdf-report .pdf-detailed .pdf-note{margin-top:1.5mm;padding-top:1.5mm}
+ .pdf-report .pdf-alert{font-size:8.5pt;break-inside:avoid}
+ .pdf-report .pdf-empty{font-size:9pt}
+ .pdf-report button,.pdf-report select,.pdf-report nav,.pdf-report .chart-readout,.pdf-report .report-actions{display:none!important}
+}
