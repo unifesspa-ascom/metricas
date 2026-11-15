@@ -700,6 +700,25 @@
       "finished_at": "2026-11-14T22:22:06.071459+00:00",
       "requests_used": 2,
       "issues": []
+    },
+    {
+      "id": "4487659a2b2f44cdb9ff481286aeb6cb",
+      "api_version": "v21.0",
+      "started_at": "2026-11-15T06:26:17.648232+00:00",
+      "listing_status": "complete",
+      "pagination_status": "exhausted",
+      "pages_received": 1,
+      "distinct_stories_observed": 0,
+      "duplicates": 0,
+      "invalid_records": 0,
+      "conflicting_timestamps": 0,
+      "request_limit": 100,
+      "page_limit": 5,
+      "insights_status": "not_needed",
+      "status": "complete",
+      "finished_at": "2026-11-15T06:26:18.718210+00:00",
+      "requests_used": 2,
+      "issues": []
     }
   ]
 }
