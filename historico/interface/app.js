@@ -29,7 +29,7 @@ function csvCell(value){let s=value==null?'':String(value);if(/^[=+@-]/.test(s))
 function summaryCSV(rows,source={}){const columns=['count','views','likes','reactions','reach'],headers=['periodo','grupo','registros','visualizacoes_informadas','curtidas','reacoes','soma_alcances_individuais','arquivo_fonte','sha256_fonte'];return '\ufeff'+headers.map(csvCell).join(';')+'\r\n'+rows.map(r=>[r.period,r.group,...columns.map(k=>r.metrics[k]),source.file,source.sha256].map(csvCell).join(';')).join('\r\n');}
 function validationNotes(report){const shared=report.issues.filter(i=>i.category==='shared_link_distinct_ids').length;const other=report.issues.length-shared;return [shared?shared+' ocorrência de link associado a IDs distintos. Os registros foram preservados, sem deduplicação automática por URL.':'',other?other+' outras ocorrências estão detalhadas no relatório de validação.':''].filter(Boolean).join(' ');}
 function validationBadge(v){const ok=v.checks>0&&v.matched===v.checks&&v.divergences===0&&v.unavailable===0;return '<span class="verified'+(ok?'':' needs-review')+'"><i></i> '+(ok?'Totais conferidos na planilha':'Conferências com pendências')+'</span>';}
-function validateBundle(bundle){if(bundle.manifest?.schema_version!==1||bundle.manifest.source?.kind!=='official_consolidated_workbook'||!Array.isArray(bundle.summary?.periods)||bundle.summary.source_sha256!==bundle.manifest.source.sha256||bundle.validation?.source_sha256!==bundle.manifest.source.sha256)throw Error('Contrato histórico incompatível.');for(const group of Object.keys(GROUPS)){const doc=bundle[group];if(doc?.schema_version!==1||doc.source_sha256!==bundle.manifest.source.sha256||!Array.isArray(doc.records))throw Error('Documento histórico incompatível: '+GROUPS[group].short);const seen=new Set();for(const r of doc.records){if(typeof r.id!=='string'||seen.has(r.id)||r.group!==group||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||typeof r.metrics!=='object')throw Error('Registro histórico inválido.');seen.add(r.id);}}return bundle;}
+function validateBundle(bundle,groups=Object.keys(GROUPS)){if(bundle.manifest?.schema_version!==1||bundle.manifest.source?.kind!=='official_consolidated_workbook'||!Array.isArray(bundle.summary?.periods)||bundle.summary.source_sha256!==bundle.manifest.source.sha256||bundle.validation?.source_sha256!==bundle.manifest.source.sha256)throw Error('Contrato histórico incompatível.');for(const group of groups){const doc=bundle[group];if(doc?.schema_version!==1||doc.source_sha256!==bundle.manifest.source.sha256||!Array.isArray(doc.records))throw Error('Documento histórico incompatível: '+GROUPS[group].short);const seen=new Set();for(const r of doc.records){if(typeof r.id!=='string'||seen.has(r.id)||r.group!==group||!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||typeof r.metrics!=='object')throw Error('Registro histórico inválido.');seen.add(r.id);}}return bundle;}
 
 function addMetricoolQuarter(bundle,snapshot){
  if(snapshot.schema_version!==1||snapshot.source!=='Metricool'||snapshot.start!=='2026-10-01'||!/^2026-(10|11|12)-\d{2}$/.test(snapshot.end)||!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.collected_on))throw Error('Carga do Metricool inválida.');
@@ -99,7 +99,7 @@ function reportFormats(group){const formats=distribution(group.rows).filter(f=>f
 function reportDocument(rows,state,manifest,options={}){const model=reportModel(rows,state,manifest),formats=model.groups.map(reportFormats).join(''),pages='<article class="pdf-page pdf-institutional">'+reportHead(model,options.continuation===true)+(quarterSource(state,manifest)?'<p class="pdf-note">'+metricoolNote(quarterSource(state,manifest))+'</p>':'')+reportCards(model)+(model.rows.length?reportBars(model.groups,model.chartMetric,state)+reportMonthly(model)+(model.both?'<section class="pdf-content-results"><div class="pdf-section-heading"><h2>Métricas por conteúdo</h2></div><table class="pdf-table"><thead><tr><th>Conteúdo</th><th class="pdf-num">Curtidas</th><th class="pdf-num">Interações</th><th class="pdf-num">Salvamentos</th><th class="pdf-num">Respostas</th></tr></thead><tbody>'+model.groups.map(g=>'<tr><th scope="row">'+g.name+'</th>'+['likes','interactions','saved','replies'].map(k=>'<td class="pdf-num">'+(g.key==='instagram-stories'&&k==='saved'||g.key==='instagram-posts'&&k==='replies'?'n/d':reportNumber(reportMetric(g.rows,k)))+'</td>').join('')+'</tr>').join('')+'</tbody></table></section>':'')+(formats?'<section class="pdf-formats"><div class="pdf-section-heading"><h2>Distribuição por formato</h2></div>'+formats+'</section>':''):'<p class="pdf-empty">Não há dados disponíveis para este período.</p>')+reportNote(model)+'</article>';return '<div class="pdf-report" role="document" aria-label="Relatório institucional" data-report-network="'+state.network+'">'+pages+'</div>';}
 
 function mount(){
- let data=null;let requestedReport=null;const rankings={facebook:'views',instagram:'views'};const state={view:'overview',year:'2026',quarter:'3',month:null,network:'facebook',scope:'all',format:'all',rankFormat:'all',collab:false,compareGroup:'instagram-posts',metric:'views',rankMetric:'views',limit:5,search:''};
+ let data=null,quarterSnapshot=null,instagramLoad=null;let requestedReport=null;const rankings={facebook:'views',instagram:'views'};const state={view:'overview',year:'2026',quarter:'3',month:null,network:'facebook',scope:'all',format:'all',rankFormat:'all',collab:false,compareGroup:'instagram-posts',metric:'views',rankMetric:'views',limit:5,search:''};
  const $=id=>document.getElementById(id);
  const combined=()=>state.network==='instagram'&&state.scope==='all'&&state.format==='all'&&!state.collab;
  const group=()=>state.network==='facebook'?'facebook':state.scope==='stories'?'instagram-stories':'instagram-posts';
@@ -163,8 +163,56 @@ function mount(){
  }
 
  let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(render,150);});
- $('tabs').addEventListener('click',event=>{const tab=event.target.closest('[data-p]');if(tab){rankings[state.network]=state.rankMetric;requestedReport=null;state.view='overview';state.network=tab.dataset.p;state.rankMetric=rankings[state.network];state.rankFormat='all';state.scope='all';state.format='all';state.collab=false;state.metric=state.network==='instagram'?'count':'views';state.search='';state.limit=5;render();}});
- $('tabs').addEventListener('keydown',event=>{const keys=['facebook','instagram'],index=keys.indexOf(state.network);let next;if(event.key==='ArrowRight')next=(index+1)%2;if(event.key==='ArrowLeft')next=(index+1)%2;if(event.key==='Home')next=0;if(event.key==='End')next=1;if(next!==undefined){event.preventDefault();rankings[state.network]=state.rankMetric;requestedReport=null;state.view='overview';state.network=keys[next];state.rankMetric=rankings[state.network];state.rankFormat='all';state.scope='all';state.format='all';state.collab=false;state.metric=state.network==='instagram'?'count':'views';render();$('tab-'+state.network).focus();}});
+ async function loadInstagram(){
+  if(data['instagram-stories'])return;
+  if(!instagramLoad){
+   instagramLoad=loadDocuments(['instagram-posts','instagram-stories']).then(documents=>{
+    const bundle=validateBundle({...data,...documents},['instagram-posts','instagram-stories']);
+    if(quarterSnapshot){
+     const snapshot={...quarterSnapshot,records:{...quarterSnapshot.records,facebook:[]}};
+     data=addMetricoolQuarter(bundle,snapshot);
+    }else data=bundle;
+   }).finally(()=>{instagramLoad=null;});
+  }
+  await instagramLoad;
+ }
+ async function loadForAction(action){
+  const status=$('data-load-status');
+  const loading=!data['instagram-stories'];
+  if(loading)status.textContent='Carregando dados do Instagram…';
+  try{
+   await loadInstagram();
+  }catch(error){
+   status.textContent='Não foi possível carregar os dados do Instagram. Tente novamente.';
+   return;
+  }
+  status.textContent='';
+  action();
+ }
+ let latestNetworkRequest=0;
+ function selectNetwork(network){
+  const request=++latestNetworkRequest;
+  const activate=()=>{
+   if(request!==latestNetworkRequest)return;
+   rankings[state.network]=state.rankMetric;
+   requestedReport=null;
+   Object.assign(state,{view:'overview',network,rankMetric:rankings[network],rankFormat:'all',
+    scope:'all',format:'all',collab:false,metric:network==='instagram'?'count':'views',search:'',limit:5});
+   render();
+   $('tab-'+network).focus();
+  };
+  if(network==='instagram')loadForAction(activate);
+  else activate();
+ }
+ $('tabs').addEventListener('click',event=>{
+  const tab=event.target.closest('[data-p]');
+  if(tab)selectNetwork(tab.dataset.p);
+ });
+ $('tabs').addEventListener('keydown',event=>{
+  const network={Home:'facebook',End:'instagram',ArrowRight:state.network==='facebook'?'instagram':'facebook',
+   ArrowLeft:state.network==='facebook'?'instagram':'facebook'}[event.key];
+  if(network){event.preventDefault();selectNetwork(network);}
+ });
  function changeFilters(year,quarter,month){
   if(requestedReport){
    changePreviewPeriod({...requestedReport,year,quarter,month,periodType:month?'month':'quarter'});
@@ -185,15 +233,29 @@ function mount(){
  $('month-select')?.addEventListener('change',()=>{
   changeFilters($('year-select').value,Number($('period-select').value),Number($('month-select').value)||null);
  });
- $('btnReport').addEventListener('click',()=>openDialog('report',false));
- $('btnExport').addEventListener('click',()=>openDialog('export',true));
+ $('btnReport').addEventListener('click',()=>{if(data)loadForAction(()=>openDialog('report',false));});
+ $('btnExport').addEventListener('click',()=>{if(data)loadForAction(()=>openDialog('export',true));});
  $('content').addEventListener('click',event=>{const mode=event.target.closest('[data-mode]');if(mode){state.scope=mode.dataset.mode;state.rankMetric='views';render();return;}const action=event.target.closest('[data-action]')?.dataset.action;if(action==='back'){requestedReport=null;state.view='overview';render();$('btnReport').focus();return;}if(action==='limit'){state.limit=state.limit===5?10:5;render();}if(action==='print')window.print();if(action==='csv'){const blob=new Blob([summaryCSV(summaryRows(),data.manifest.source)],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='unifesspa-historico-'+state.year+'-'+state.quarter+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}});
- const names=['manifest','summary','validation','facebook','instagram-posts','instagram-stories'];Promise.all(names.map(async name=>{const response=await fetch(historicalAsset('data/'+name+'.json'),{cache:'no-cache'});if(!response.ok)throw Error('Arquivo histórico indisponível: '+name);return [name,await response.json()];})).then(async entries=>{
-  data=validateBundle(Object.fromEntries(entries));
-  try{
-   const response=await fetch(historicalAsset('data/metricool-publicacoes-2026-q4.json'),{cache:'no-cache'});
-   if(response.ok)data=addMetricoolQuarter(data,await response.json());
-  }catch(error){console.warn(error);}
+ async function loadDocuments(names){
+  const entries=await Promise.all(names.map(async name=>{
+   const response=await fetch(historicalAsset('data/'+name+'.json'),{cache:'no-cache'});
+   if(!response.ok)throw Error('Arquivo histórico indisponível: '+name);
+   return [name,await response.json()];
+  }));
+  return Object.fromEntries(entries);
+ }
+ const snapshotLoad=loadDocuments(['metricool-publicacoes-2026-q4']).catch(()=>null);
+ Promise.all([loadDocuments(['manifest','summary','validation','facebook']),snapshotLoad]).then(([documents,snapshot])=>{
+  data=validateBundle(documents,['facebook']);
+  if(snapshot){
+   try{
+    const candidate=snapshot['metricool-publicacoes-2026-q4'];
+    const emptyInstagram={records:[]};
+    const {facebook,manifest}=addMetricoolQuarter({...data,'instagram-posts':emptyInstagram},candidate);
+    data={...data,facebook,manifest};
+    quarterSnapshot=candidate;
+   }catch(error){console.warn(error);}
+  }
   Object.assign(state,initialPeriod());
   render();
  }).catch(error=>{$('content').innerHTML='<div class="panel empty"><strong>Não foi possível carregar a base histórica</strong>'+esc(error.message)+'. Sirva esta pasta por HTTP, conforme o README.</div>';});
