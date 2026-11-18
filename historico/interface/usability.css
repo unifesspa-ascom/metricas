@@ -10,3 +10,6 @@
 .pdf-analysis{color:#182b3a;margin:10mm 0 0;padding:0;font-family:Montserrat,'Segoe UI',Arial,sans-serif}.pdf-analysis h2{font-size:17px;margin:0 0 4mm;break-after:avoid;page-break-after:avoid}.pdf-analysis-text{font-size:12px;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;orphans:3;widows:3}
 @media print{.pdf-analysis{break-inside:auto;page-break-inside:auto}.pdf-analysis h2{font-size:11pt;break-after:avoid;page-break-after:avoid}.pdf-analysis-text{font-size:9pt;line-height:1.6;white-space:pre-wrap;orphans:3;widows:3}}
 @media(max-width:700px){.dialog-analysis{padding:0 18px 18px}}
+
+.dialog-report-help{padding:0 24px;margin:0 0 16px;font-size:13px;color:var(--muted)}
+@media screen and (min-width:651px){.cards-combined>.stat-card:nth-child(n+4){grid-column:span 2}}
