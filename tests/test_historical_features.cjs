@@ -29,3 +29,13 @@ test('analysis suggestions use only selected factual counts and independent view
 test('analysis suggestion distinguishes confirmed zero, missing and partial values',()=>{const fake={facebook:{records:[row('f','2026-08-01',{views:0},{network:'facebook',group:'facebook'})]},'instagram-posts':{records:[row('a','2026-08-01',{views:7}),row('b','2026-08-02',{views:null})]},'instagram-stories':{records:[row('s','2026-08-01',{views:null},{group:'instagram-stories'})]}};const before=JSON.stringify(fake),text=F.suggestedAnalysis(fake,{...c,periodType:'month',month:8},A);assert.match(text,/publicações: 0/);assert.match(text,/feed: 7 \(soma parcial; 1\/2/);assert.match(text,/stories: n\/d/);assert.equal(JSON.stringify(fake),before);});
 test('analysis is optional, escaped, preserves line breaks and follows all networks',()=>{for(const text of ['', '  \n '])assert.equal(F.analysisHTML(text),'');const text='Primeiro parágrafo.\n\nSegundo.\n<script>alert(1)</script>',html=F.reportBundle(data,{...c,analysis:text},A);assert.match(html,/Primeiro parágrafo.\n\nSegundo.\n&lt;script&gt;/);assert.ok(!html.includes('<script>'));assert.ok(html.indexOf('pdf-analysis')>html.indexOf('data-report-network="instagram"'));assert.equal((html.match(/id="pdf-analysis-title"/g)||[]).length,1);assert.ok(!Object.hasOwn(F.config({...c,analysis:text}),'analysis'));});
 test('long analysis preserves every paragraph without truncation',()=>{const text=Array.from({length:120},(_,i)=>'Parágrafo '+i+' — conteúdo editorial.').join('\n\n'),html=F.analysisHTML(text);assert.ok(html.includes('Parágrafo 119'));assert.equal((html.match(/conteúdo editorial/g)||[]).length,120);});
+
+test('Instagram reports show feed shares alongside post counts for both periods',()=>{
+ for(const [periodType,total] of [['month','1.740'],['quarter','5.029']]){
+  const html=F.reportBundle(data,{...c,month:8,periodType},A);
+  const instagram=html.slice(html.indexOf('data-report-network="instagram"'));
+  assert.match(instagram,new RegExp('Compartilhamentos · feed</span><strong>'+total.replace('.','\\.')+'</strong>'));
+  assert.match(instagram,/Compartilhamentos · feed<\/th>/);
+  assert.match(instagram,/fonte não informa o total de compartilhamentos de stories/);
+ }
+});
