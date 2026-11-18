@@ -11,10 +11,10 @@
   <link rel="stylesheet" href="historico/interface/reports.css">
   <link rel="stylesheet" href="historico/interface/usability.css">
   <link rel="stylesheet" href="historico/interface/audience.css?v=2">
-  <script src="historico/interface/audience.js?v=2" defer></script>
+  <script src="historico/interface/audience.js?v=3" defer></script>
   <script src="historico/interface/features.js" defer></script>
   <script src="historico/interface/exports.js" defer></script>
-  <script src="historico/interface/app.js?v=metricool-q4" data-data-root="../data/" data-assets-root="../assets/" defer></script>
+  <script src="historico/interface/app.js?v=abertura" data-data-root="../data/" data-assets-root="../assets/" defer></script>
 </head>
 <body>
   <a class="skip" href="#content">Pular para o painel</a>
@@ -31,6 +31,7 @@
     <section class="page-heading"><h2 id="page-title">Panorama do período</h2></section>
     <section class="period-controls" aria-label="Seleção de ano e período"><label for="year-select">Ano <select id="year-select"></select></label><label for="period-select">Trimestre <select id="period-select"></select></label><label for="month-select">Mês <select id="month-select"></select></label></section>
     <section id="period-status" class="period-status" aria-label="Referência e atualização" aria-live="polite"></section>
+    <div id="data-load-status" role="status"></div>
     <div id="content" role="tabpanel" tabindex="-1"><div class="loading">Preparando a base histórica…</div></div>
     <section id="audience" class="audience" aria-labelledby="audience-title" hidden></section>
     <footer class="footer institutional-footer"><img src="historico/assets/unifesspa.png" alt="Unifesspa — Assessoria de Comunicação"><div><strong>Desenvolvido pela Assessoria de Comunicação</strong><span>Universidade Federal do Sul e Sudeste do Pará</span></div></footer>

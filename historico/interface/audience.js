@@ -85,6 +85,7 @@
 
   function mount(snapshot) {
     let renderedNetwork;
+    let pendingAnchor=location.hash==='#audience';
     function render() {
       const { network, view } = document.body.dataset;
       const data = snapshot.networks[network];
@@ -98,6 +99,12 @@
       const panels = element('div', null, 'audience-panels');
       panels.append(heatmap(data.hours), locations(data));
       section.replaceChildren(title, sourceNote, panels);
+      if(pendingAnchor){
+        pendingAnchor=false;
+        requestAnimationFrame(()=>{
+          if(location.hash==='#audience'&&!section.hidden)section.scrollIntoView();
+        });
+      }
     }
     new MutationObserver(render).observe(document.body, { attributes: true, attributeFilter: ['data-network', 'data-view'] });
     render();
