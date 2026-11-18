@@ -13,3 +13,5 @@
 
 .dialog-report-help{padding:0 24px;margin:0 0 16px;font-size:13px;color:var(--muted)}
 @media screen and (min-width:651px){.cards-combined>.stat-card:nth-child(n+4){grid-column:span 2}}
+
+.period-controls label[hidden]{display:none}
