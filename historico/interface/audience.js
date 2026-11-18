@@ -46,24 +46,40 @@
     const peaks = hours.flatMap((values, day) => values.map((score, hour) => ({ day, hour, score })))
       .sort((a, b) => b.score - a.score).slice(0, 3)
       .map(({ day, hour }) => days[day].toLowerCase() + ', ' + hour + 'h');
-    panel.append(heading, element('p', 'Horário de Brasília · Intensidade relativa de 0 a 100. Tons mais escuros indicam horários mais favoráveis.', 'sub'),
-      grid, element('p', 'Horários em destaque · ' + peaks.join(' · '), 'audience-peaks'));
+    const footer = element('div', null, 'audience-map-footer');
+    const legend = element('div', null, 'audience-legend');
+    const scale = element('span', null, 'audience-scale');
+    scale.setAttribute('aria-hidden', 'true');
+    legend.append(element('span', 'Menor'), scale, element('span', 'Maior intensidade'));
+    const highlights = element('p', null, 'audience-peaks');
+    highlights.append(element('strong', 'Em destaque'), document.createTextNode(' · ' + peaks.join(' · ')));
+    footer.append(legend, highlights);
+    panel.append(heading, element('p', 'Horário de Brasília · Intensidade relativa de 0 a 100', 'sub'), grid, footer);
     return panel;
   }
 
   function locations(network) {
     const panel = element('article', null, 'panel audience-panel');
     panel.append(element('h3', 'De onde são os seguidores'));
+    const groups = element('div', null, 'audience-location-groups');
     for (const [title, rows] of [['Cidades', network.cities], ['Países', network.countries]]) {
       const list = element('ul', null, 'audience-locations');
       for (const [place, share] of rows) {
         const item = element('li');
-        item.append(element('span', title === 'Países' ? countryNames.of(place) : place),
+        const label = element('div', null, 'audience-location-label');
+        label.append(element('span', title === 'Países' ? countryNames.of(place) : place),
           element('strong', percent.format(share / 100)));
+        const bar = element('div', null, 'audience-location-bar');
+        bar.setAttribute('aria-hidden', 'true');
+        bar.style.setProperty('--share', share + '%');
+        item.append(label, bar);
         list.append(item);
       }
-      panel.append(element('h4', title), list);
+      const group = element('div');
+      group.append(element('h4', title), list);
+      groups.append(group);
     }
+    panel.append(groups);
     return panel;
   }
 
