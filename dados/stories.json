@@ -1074,7 +1074,7 @@
       "published_at": "2026-11-19T03:47:28+00:00",
       "publication_date_brt": "2026-11-19",
       "first_seen_at": "2026-11-19T07:22:23.799745+00:00",
-      "last_seen_at": "2026-11-19T07:22:23.799745+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
       "snapshots": [
         {
           "run_id": "ad409bd9192f4358be15bcbb44684135",
@@ -1100,6 +1100,352 @@
             }
           },
           "collected_at": "2026-11-19T07:22:26.731687+00:00"
+        },
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404419+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404428+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404429+00:00"
+        }
+      ]
+    },
+    "18101192786112369": {
+      "id": "18101192786112369",
+      "timestamp": "2026-11-19T11:53:15+0000",
+      "published_at": "2026-11-19T11:53:15+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 923,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:54.018526+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 779,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:54.695817+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:33:54.695835+00:00"
+        }
+      ]
+    },
+    "18116743004335779": {
+      "id": "18116743004335779",
+      "timestamp": "2026-11-19T11:54:36+0000",
+      "published_at": "2026-11-19T11:54:36+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 910,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:55.544200+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 759,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:56.313338+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:33:56.313355+00:00"
+        }
+      ]
+    },
+    "17897018598435572": {
+      "id": "17897018598435572",
+      "timestamp": "2026-11-19T12:32:07+0000",
+      "published_at": "2026-11-19T12:32:07+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 932,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:58.271244+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 726,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:58.992983+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:33:58.993001+00:00"
+        }
+      ]
+    },
+    "18137109019814423": {
+      "id": "18137109019814423",
+      "timestamp": "2026-11-19T13:19:11+0000",
+      "published_at": "2026-11-19T13:19:11+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 798,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:33:59.755777+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 612,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-19T20:34:00.634207+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:00.634226+00:00"
+        }
+      ]
+    },
+    "18110548016200098": {
+      "id": "18110548016200098",
+      "timestamp": "2026-11-19T20:25:06+0000",
+      "published_at": "2026-11-19T20:25:06+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "permission",
+              "checked_at": "2026-11-19T20:34:01.404214+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404239+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404242+00:00"
+        }
+      ]
+    },
+    "17933714061423857": {
+      "id": "17933714061423857",
+      "timestamp": "2026-11-19T20:26:00+0000",
+      "published_at": "2026-11-19T20:26:00+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404276+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404282+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404285+00:00"
+        }
+      ]
+    },
+    "17869006776677068": {
+      "id": "17869006776677068",
+      "timestamp": "2026-11-19T20:26:07+0000",
+      "published_at": "2026-11-19T20:26:07+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404303+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404307+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404309+00:00"
+        }
+      ]
+    },
+    "17920809903533675": {
+      "id": "17920809903533675",
+      "timestamp": "2026-11-19T20:26:13+0000",
+      "published_at": "2026-11-19T20:26:13+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404324+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404332+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404333+00:00"
+        }
+      ]
+    },
+    "18101913326413920": {
+      "id": "18101913326413920",
+      "timestamp": "2026-11-19T20:26:31+0000",
+      "published_at": "2026-11-19T20:26:31+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404350+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404354+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404356+00:00"
+        }
+      ]
+    },
+    "17911573044571006": {
+      "id": "17911573044571006",
+      "timestamp": "2026-11-19T20:26:40+0000",
+      "published_at": "2026-11-19T20:26:40+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404371+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404375+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404376+00:00"
+        }
+      ]
+    },
+    "18078029381741292": {
+      "id": "18078029381741292",
+      "timestamp": "2026-11-19T20:26:49+0000",
+      "published_at": "2026-11-19T20:26:49+00:00",
+      "publication_date_brt": "2026-11-19",
+      "first_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "last_seen_at": "2026-11-19T20:33:53.182600+00:00",
+      "snapshots": [
+        {
+          "run_id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404390+00:00"
+            },
+            "reach": {
+              "status": "unavailable",
+              "category": "network_stopped",
+              "checked_at": "2026-11-19T20:34:01.404394+00:00"
+            }
+          },
+          "collected_at": "2026-11-19T20:34:01.404396+00:00"
         }
       ]
     }
@@ -1446,6 +1792,53 @@
       "finished_at": "2026-11-19T07:22:35.330544+00:00",
       "requests_used": 14,
       "issues": []
+    },
+    {
+      "id": "04b2a422c3d3437aaf4ad6ef2e7623c9",
+      "api_version": "v21.0",
+      "started_at": "2026-11-19T20:33:52.020995+00:00",
+      "listing_status": "complete",
+      "pagination_status": "exhausted",
+      "pages_received": 1,
+      "distinct_stories_observed": 12,
+      "duplicates": 0,
+      "invalid_records": 0,
+      "conflicting_timestamps": 0,
+      "request_limit": 100,
+      "page_limit": 5,
+      "insights_status": "partial",
+      "status": "partial",
+      "finished_at": "2026-11-19T20:34:01.404440+00:00",
+      "requests_used": 11,
+      "issues": [
+        {
+          "stage": "insights",
+          "metric": "views",
+          "category": "permission",
+          "http": 400,
+          "meta_code": 10,
+          "meta_subcode": null,
+          "count": 1
+        },
+        {
+          "stage": "insights",
+          "metric": "reach",
+          "category": "network_stopped",
+          "http": null,
+          "meta_code": null,
+          "meta_subcode": null,
+          "count": 8
+        },
+        {
+          "stage": "insights",
+          "metric": "views",
+          "category": "network_stopped",
+          "http": null,
+          "meta_code": null,
+          "meta_subcode": null,
+          "count": 7
+        }
+      ]
     }
   ]
 }
