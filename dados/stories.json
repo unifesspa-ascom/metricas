@@ -2985,7 +2985,7 @@
       "published_at": "2026-11-24T12:36:34+00:00",
       "publication_date_brt": "2026-11-24",
       "first_seen_at": "2026-11-24T22:24:28.629198+00:00",
-      "last_seen_at": "2026-11-24T22:24:28.629198+00:00",
+      "last_seen_at": "2026-11-25T08:29:18.343533+00:00",
       "snapshots": [
         {
           "run_id": "e95cec562a604179a5fbd31915e06f14",
@@ -3011,6 +3011,31 @@
             }
           },
           "collected_at": "2026-11-24T22:24:30.196998+00:00"
+        },
+        {
+          "run_id": "717cf6a92c35481c9dc6e150f257ce53",
+          "inventory_observation": "complete",
+          "metrics": {
+            "views": {
+              "status": "confirmed",
+              "value": 2237,
+              "api_metric": "views",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-25T08:29:19.336567+00:00"
+            },
+            "reach": {
+              "status": "confirmed",
+              "value": 1797,
+              "api_metric": "reach",
+              "api_version": "v21.0",
+              "response_structure": "values",
+              "period": "lifetime",
+              "checked_at": "2026-11-25T08:29:20.084693+00:00"
+            }
+          },
+          "collected_at": "2026-11-25T08:29:20.084708+00:00"
         }
       ]
     }
@@ -3592,6 +3617,25 @@
       "insights_status": "complete",
       "status": "complete",
       "finished_at": "2026-11-24T22:24:30.197030+00:00",
+      "requests_used": 4,
+      "issues": []
+    },
+    {
+      "id": "717cf6a92c35481c9dc6e150f257ce53",
+      "api_version": "v21.0",
+      "started_at": "2026-11-25T08:29:17.188434+00:00",
+      "listing_status": "complete",
+      "pagination_status": "exhausted",
+      "pages_received": 1,
+      "distinct_stories_observed": 1,
+      "duplicates": 0,
+      "invalid_records": 0,
+      "conflicting_timestamps": 0,
+      "request_limit": 100,
+      "page_limit": 5,
+      "insights_status": "complete",
+      "status": "complete",
+      "finished_at": "2026-11-25T08:29:20.084738+00:00",
       "requests_used": 4,
       "issues": []
     }
